@@ -1,5 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
+const Parser = @import("parser.zig");
 
 pub const Gen = struct {
     seed: u64,
@@ -30,10 +32,38 @@ pub fn write(alloc: Allocator, gen: Gen, coords: []Points) !void {
 
     const data = try std.json.Stringify.valueAlloc(
         alloc,
-        .{ .gen = gen, .points = coords },
+        .{ .points = coords },
         .{ .whitespace = .indent_2 },
     );
     defer alloc.free(data);
 
     try dir.writeFile(.{ .sub_path = filename, .data = data });
+}
+
+pub fn read(alloc: Allocator, path: []const u8) ![]Points {
+    var cwd = std.fs.cwd();
+    try cwd.makePath("generated");
+
+    var dir = try cwd.openDir("generated", .{});
+    defer dir.close();
+
+    const file = try dir.openFile(path, .{});
+    defer file.close();
+
+    var buffer: [1024]u8 = undefined;
+    var reader = file.reader(&buffer);
+
+    var parser: Parser = undefined;
+    parser.init(&reader.interface, alloc);
+
+    return parser.parse();
+}
+
+test "json.read parses an existing generated file" {
+    const alloc = std.testing.allocator;
+
+    const points = try read(alloc, "42_5_16548.59337307305.json");
+    defer alloc.free(points);
+
+    try std.testing.expect(points.len > 0);
 }
