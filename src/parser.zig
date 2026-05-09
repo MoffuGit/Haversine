@@ -19,29 +19,54 @@ pub fn init(self: *Parser, reader: *std.io.Reader, alloc: Allocator) void {
 }
 
 pub fn parse(self: *Parser) ![]json.Points {
-    const points: ArrayList(json.Points) = .{};
+    var res: ArrayList(json.Points) = .{};
+    var points: json.Points = .{};
 
     while (self.lexer.next_token()) |token| {
+        if (token == .LBracket) break;
+        if (token == .String) self.alloc.free(token.String);
+    }
+
+    while (self.lexer.next_token()) |token| {
+        //NOTE:
+        //00 -> x0,
+        //01 -> x1,
+        //10 -> y0
+        //11 -> y1
+        var point: u2 = 0;
         switch (token) {
+            .LBrace => points = .{},
             .String => |s| {
-                std.log.err("{s}", .{s});
-                self.alloc.free(s);
+                defer self.alloc.free(s);
+                if (std.mem.eql(u8, s, "x0")) point = 0b00;
+                if (std.mem.eql(u8, s, "x1")) point = 0b01;
+                if (std.mem.eql(u8, s, "y0")) point = 0b10;
+                if (std.mem.eql(u8, s, "y1")) point = 0b11;
+            },
+            .Float => |f| {
+                switch (point) {
+                    0b00 => points.x0 = f,
+                    0b01 => points.x1 = f,
+                    0b10 => points.y0 = f,
+                    0b11 => points.y1 = f,
+                }
+            },
+            .RBracket => {
+                res.append(self.alloc, points) catch break;
             },
             .Illegal => {
                 break;
             },
-            else => {
-                std.log.err("{}", .{token});
-            },
+            else => {},
         }
     }
 
-    return points.allocatedSlice();
+    return res.allocatedSlice();
 }
 
 const Token = union(enum) {
-    LBraket,
-    RBraket,
+    LBracket,
+    RBracket,
 
     LBrace,
     RBrace,
@@ -126,8 +151,8 @@ const Lexer = struct {
             '"' => self.read_string(),
             '{' => .LBrace,
             '}' => .RBrace,
-            '[' => .LBraket,
-            ']' => .RBraket,
+            '[' => .LBracket,
+            ']' => .RBracket,
             ':' => .Colon,
             ',' => .Comma,
             '.' => .Dot,
