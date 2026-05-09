@@ -27,13 +27,13 @@ pub fn parse(self: *Parser) ![]json.Points {
         if (token == .String) self.alloc.free(token.String);
     }
 
+    var point: u2 = 0;
     while (self.lexer.next_token()) |token| {
         //NOTE:
         //00 -> x0,
         //01 -> x1,
         //10 -> y0
         //11 -> y1
-        var point: u2 = 0;
         switch (token) {
             .LBrace => points = .{},
             .String => |s| {
@@ -51,17 +51,17 @@ pub fn parse(self: *Parser) ![]json.Points {
                     0b11 => points.y1 = f,
                 }
             },
-            .RBracket => {
+            .RBrace => {
                 res.append(self.alloc, points) catch break;
             },
-            .Illegal => {
+            .Illegal, .RBracket => {
                 break;
             },
             else => {},
         }
     }
 
-    return res.allocatedSlice();
+    return try res.toOwnedSlice(self.alloc);
 }
 
 const Token = union(enum) {

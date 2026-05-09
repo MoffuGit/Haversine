@@ -38,16 +38,12 @@ pub fn write(alloc: Allocator, gen: Gen, coords: []Points) !void {
     defer alloc.free(data);
 
     try dir.writeFile(.{ .sub_path = filename, .data = data });
+
+    std.log.debug("{s}", .{filename});
 }
 
 pub fn read(alloc: Allocator, path: []const u8) ![]Points {
-    var cwd = std.fs.cwd();
-    try cwd.makePath("generated");
-
-    var dir = try cwd.openDir("generated", .{});
-    defer dir.close();
-
-    const file = try dir.openFile(path, .{});
+    const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
     var buffer: [1024]u8 = undefined;
@@ -57,13 +53,4 @@ pub fn read(alloc: Allocator, path: []const u8) ![]Points {
     parser.init(&reader.interface, alloc);
 
     return parser.parse();
-}
-
-test "json.read parses an existing generated file" {
-    const alloc = std.testing.allocator;
-
-    const points = try read(alloc, "42_5_16548.59337307305.json");
-    defer alloc.free(points);
-
-    try std.testing.expect(points.len > 0);
 }

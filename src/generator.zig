@@ -29,7 +29,7 @@ pub fn main() !void {
 
     var count: f64 = 0.0;
 
-    while (coords.items.len < coords.capacity) {
+    while (coords.items.len < size) {
         const x0 = genX(rand);
         const y0 = genY(rand);
 
