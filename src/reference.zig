@@ -17,13 +17,13 @@ pub fn referenceHaversine(
     assert(y0 <= 90.0);
     assert(y0 >= -90.0);
 
-    assert(y1 <= 90);
-    assert(y1 >= 90.0);
+    assert(y1 <= 90.0);
+    assert(y1 >= -90.0);
 
-    assert(x0 <= 180);
+    assert(x0 <= 180.0);
     assert(x0 >= -180.0);
 
-    assert(x1 <= 180);
+    assert(x1 <= 180.0);
     assert(x1 >= -180.0);
 
     const dY = math.degreesToRadians(y1 - y0);
