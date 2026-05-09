@@ -41,16 +41,3 @@ pub fn write(alloc: Allocator, gen: Gen, coords: []Points) !void {
 
     std.log.debug("{s}", .{filename});
 }
-
-pub fn read(alloc: Allocator, path: []const u8) ![]Points {
-    const file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-
-    var buffer: [1024]u8 = undefined;
-    var reader = file.reader(&buffer);
-
-    var parser: Parser = undefined;
-    parser.init(&reader.interface, alloc);
-
-    return parser.parse();
-}

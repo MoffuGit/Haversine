@@ -16,28 +16,28 @@ pub fn init(self: *Parser, reader: *std.io.Reader, alloc: Allocator) void {
     };
 
     self.lexer.init(reader, alloc);
-}
 
-pub fn parse(self: *Parser) ![]json.Points {
-    var res: ArrayList(json.Points) = .{};
-    var points: json.Points = .{};
-
+    //advance to the [points];
     while (self.lexer.next_token()) |token| {
         if (token == .LBracket) break;
-        if (token == .String) self.alloc.free(token.String);
     }
+}
+
+pub fn deinit(self: *Parser) void {
+    self.lexer.deinit();
+}
+
+pub fn next(self: *Parser) ?json.Points {
+    var points: json.Points = .{};
 
     var point: u2 = 0;
     while (self.lexer.next_token()) |token| {
-        //NOTE:
-        //00 -> x0,
-        //01 -> x1,
-        //10 -> y0
-        //11 -> y1
+        if (token == .LBrace) break;
+    }
+
+    while (self.lexer.next_token()) |token| {
         switch (token) {
-            .LBrace => points = .{},
             .String => |s| {
-                defer self.alloc.free(s);
                 if (std.mem.eql(u8, s, "x0")) point = 0b00;
                 if (std.mem.eql(u8, s, "x1")) point = 0b01;
                 if (std.mem.eql(u8, s, "y0")) point = 0b10;
@@ -52,16 +52,16 @@ pub fn parse(self: *Parser) ![]json.Points {
                 }
             },
             .RBrace => {
-                res.append(self.alloc, points) catch break;
+                return points;
             },
             .Illegal, .RBracket => {
-                break;
+                return null;
             },
             else => {},
         }
     }
 
-    return try res.toOwnedSlice(self.alloc);
+    return null;
 }
 
 const Token = union(enum) {
@@ -89,6 +89,8 @@ const Lexer = struct {
     alloc: Allocator,
     char: ?u8,
 
+    list: ArrayList(u8) = .{},
+
     pub fn init(self: *Self, reader: *std.io.Reader, alloc: Allocator) void {
         self.* = .{
             .char = null,
@@ -97,6 +99,10 @@ const Lexer = struct {
         };
 
         self.read_char();
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.list.deinit(self.alloc);
     }
 
     pub fn read_char(self: *Self) void {
@@ -115,31 +121,29 @@ const Lexer = struct {
     }
 
     pub fn read_number(self: *Self) Token {
-        var float: ArrayList(u8) = .{};
-        defer float.deinit(self.alloc);
-
+        self.list.clearRetainingCapacity();
         while (self.char) |char| {
             if (!ascii.isDigit(char) and char != '.' and char != '-') break;
-            float.append(self.alloc, char) catch return .Illegal;
+            self.list.append(self.alloc, char) catch return .Illegal;
             self.read_char();
         }
 
-        const _float = std.fmt.parseFloat(f64, float.items);
+        const _float = std.fmt.parseFloat(f64, self.list.items);
         return .{ .Float = _float catch return .Illegal };
     }
 
     pub fn read_string(self: *Self) Token {
         self.read_char();
-        var string: ArrayList(u8) = .{};
+        self.list.clearRetainingCapacity();
 
         while (self.char) |char| {
             if (char == '"') break;
-            string.append(self.alloc, char) catch return .Illegal;
+            self.list.append(self.alloc, char) catch return .Illegal;
             self.read_char();
         }
 
         self.read_char();
-        return .{ .String = string.toOwnedSlice(self.alloc) catch &.{} };
+        return .{ .String = self.list.items };
     }
 
     pub fn next_token(self: *Self) ?Token {
