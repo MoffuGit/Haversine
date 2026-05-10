@@ -39,9 +39,8 @@ pub fn readCpuTimer() u64 {
     return val;
 }
 
-pub fn guessCpuFreq(milliseconds_to_wait: u64) void {
+pub fn guessCpuFreq(milliseconds_to_wait: u64) f64 {
     const os_freq = OsFreq;
-    std.debug.print("    OS Freq: {} (reported)\n", .{os_freq});
 
     const cpu_start: u64 = readCpuTimer();
     const os_start: u64 = readOsTimer();
@@ -61,17 +60,13 @@ pub fn guessCpuFreq(milliseconds_to_wait: u64) void {
         cpu_freq = os_freq * cpu_elapsed / os_elapsed;
     }
 
-    std.debug.print("   OS Timer: {} -> {} = {} elapsed\n", .{ os_start, os_end, os_elapsed });
-    std.debug.print(" OS Seconds: {d:.4}\n", .{@as(f64, @floatFromInt(os_elapsed)) / @as(f64, @floatFromInt(os_freq))});
-
-    std.debug.print("  CPU Timer: {} -> {} = {} elapsed\n", .{ cpu_start, cpu_end, cpu_elapsed });
-    std.debug.print("   CPU Freq: {} (guessed)\n", .{cpu_freq});
+    return @floatFromInt(cpu_freq);
 }
 
 test "guess cpu freq" {
-    guessCpuFreq(1000);
-    guessCpuFreq(100);
-    guessCpuFreq(10);
+    _ = guessCpuFreq(1000);
+    _ = guessCpuFreq(100);
+    _ = guessCpuFreq(10);
 }
 
 test "os timer" {

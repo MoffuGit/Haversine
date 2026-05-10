@@ -9,6 +9,8 @@ const Parser = @This();
 lexer: Lexer,
 alloc: Allocator,
 
+time: u64 = 0,
+
 pub fn init(self: *Parser, reader: *std.io.Reader, alloc: Allocator) void {
     self.* = .{
         .lexer = undefined,
