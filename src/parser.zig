@@ -3,15 +3,16 @@ const Allocator = std.mem.Allocator;
 const json = @import("json.zig");
 const ascii = std.ascii;
 const ArrayList = std.ArrayList;
+const cpu = @import("cpu.zig");
 
 const Parser = @This();
 
 lexer: Lexer,
 alloc: Allocator,
 
-time: u64 = 0,
+t: u64 = 0,
 
-pub fn init(self: *Parser, reader: *std.io.Reader, alloc: Allocator) void {
+pub fn init(self: *Parser, reader: *std.Io.Reader, alloc: Allocator) void {
     self.* = .{
         .lexer = undefined,
         .alloc = alloc,
@@ -34,10 +35,18 @@ pub fn next(self: *Parser) ?json.Points {
 
     var point: u2 = 0;
     while (self.lexer.next_token()) |token| {
+        const start = cpu.readCpuTimer();
+        defer {
+            self.t += cpu.readCpuTimer() - start;
+        }
         if (token == .LBrace) break;
     }
 
     while (self.lexer.next_token()) |token| {
+        const start = cpu.readCpuTimer();
+        defer {
+            self.t += cpu.readCpuTimer() - start;
+        }
         switch (token) {
             .String => |s| {
                 if (std.mem.eql(u8, s, "x0")) point = 0b00;
@@ -87,13 +96,15 @@ const Token = union(enum) {
 const Lexer = struct {
     const Self = @This();
 
-    reader: *std.io.Reader,
+    reader: *std.Io.Reader,
     alloc: Allocator,
     char: ?u8,
 
-    list: ArrayList(u8) = .{},
+    t: u64 = 0,
 
-    pub fn init(self: *Self, reader: *std.io.Reader, alloc: Allocator) void {
+    list: ArrayList(u8) = .empty,
+
+    pub fn init(self: *Self, reader: *std.Io.Reader, alloc: Allocator) void {
         self.* = .{
             .char = null,
             .reader = reader,
@@ -149,6 +160,11 @@ const Lexer = struct {
     }
 
     pub fn next_token(self: *Self) ?Token {
+        const start = cpu.readCpuTimer();
+        defer {
+            self.t += cpu.readCpuTimer() - start;
+        }
+
         self.skip_whitespace();
 
         const c = self.char orelse return null;

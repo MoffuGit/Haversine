@@ -1,20 +1,19 @@
 const std = @import("std");
-const GPA = std.heap.GeneralPurposeAllocator(.{});
 const ArrayList = std.ArrayList;
 const mem = std.mem;
 const json = @import("json.zig");
 const reference = @import("reference.zig");
 
-pub fn main() !void {
-    var gpa: GPA = .{};
-    const alloc = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const alloc = init.gpa;
+    const io = init.io;
 
-    const args = std.os.argv;
+    var arg_it = init.minimal.args.iterate();
 
-    if (args.len != 3) return error.WrongArgs;
-
-    const seed_arg: []u8 = mem.span(args[1]);
-    const size_arg: []u8 = mem.span(args[2]);
+    _ = arg_it.next() orelse return error.WrongArgs;
+    const seed_arg = arg_it.next() orelse return error.WrongArgs;
+    const size_arg = arg_it.next() orelse return error.WrongArgs;
+    if (arg_it.next() != null) return error.WrongArgs;
 
     const seed = try std.fmt.parseInt(u64, seed_arg, 10);
     const size = try std.fmt.parseInt(u64, size_arg, 10);
@@ -22,7 +21,7 @@ pub fn main() !void {
     var prng: std.Random.DefaultPrng = .init(seed);
     const rand = prng.random();
 
-    var coords: ArrayList(json.Points) = .{};
+    var coords: ArrayList(json.Points) = .empty;
     defer coords.deinit(alloc);
 
     try coords.ensureTotalCapacity(alloc, size);
@@ -46,7 +45,7 @@ pub fn main() !void {
         count += reference.referenceHaversine(x0, y0, x1, y1, 6372.8);
     }
 
-    try json.write(alloc, .{ .expected = count / @as(f64, @floatFromInt(size)), .seed = seed, .size = size }, coords.items);
+    try json.write(alloc, io, .{ .expected = count / @as(f64, @floatFromInt(size)), .seed = seed, .size = size }, coords.items);
 }
 
 pub fn genY(rand: std.Random) f64 {

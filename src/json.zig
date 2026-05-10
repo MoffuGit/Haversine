@@ -16,12 +16,12 @@ pub const Points = struct {
     y1: f64 = 0.0,
 };
 
-pub fn write(alloc: Allocator, gen: Gen, coords: []Points) !void {
-    var cwd = std.fs.cwd();
-    try cwd.makePath("generated");
+pub fn write(alloc: Allocator, io: std.Io, gen: Gen, coords: []Points) !void {
+    var cwd = std.Io.Dir.cwd();
+    try cwd.createDirPath(io, "generated");
 
-    var dir = try cwd.openDir("generated", .{});
-    defer dir.close();
+    var dir = try cwd.openDir(io, "generated", .{});
+    defer dir.close(io);
 
     const filename = try std.fmt.allocPrint(
         alloc,
@@ -37,7 +37,7 @@ pub fn write(alloc: Allocator, gen: Gen, coords: []Points) !void {
     );
     defer alloc.free(data);
 
-    try dir.writeFile(.{ .sub_path = filename, .data = data });
+    try dir.writeFile(io, .{ .sub_path = filename, .data = data });
 
     std.log.debug("{s}", .{filename});
 }
