@@ -70,8 +70,6 @@ test "guess cpu freq" {
 }
 
 test "os timer" {
-    std.log.debug("OS Freq: {}", .{OsFreq});
-
     const OSStart = readOsTimer();
     var OSEnd: u64 = 0;
     var OSElapsed: u64 = 0;
@@ -80,16 +78,10 @@ test "os timer" {
         OSEnd = readOsTimer();
         OSElapsed = OSEnd - OSStart;
     }
-
-    std.log.debug("OS Timer:{} -> {} = {} elapsed", .{ OSStart, OSEnd, OSElapsed });
-    std.log.debug("OS Seconds: {}", .{@as(f64, @floatFromInt(OSElapsed)) / @as(f64, @floatFromInt(OsFreq))});
 }
 
 test "cpu timer" {
-    testing.log_level = .debug;
     const CpuFreq = readCpuFreq();
-    std.log.debug("OS Freq: {}", .{OsFreq});
-    std.log.debug("CPU Freq: {}", .{CpuFreq});
 
     const CPUStart: u64 = readCpuTimer();
     const OSStart = readOsTimer();
@@ -104,8 +96,5 @@ test "cpu timer" {
     const CPUEnd: u64 = readCpuTimer();
     const CPUElapsed: u64 = CPUEnd - CPUStart;
 
-    std.log.debug("OS Timer: {} -> {} = {} elapsed", .{ OSStart, OSEnd, OSElapsed });
-    std.log.debug("OS Seconds: {d}", .{@as(f64, @floatFromInt(OSElapsed)) / @as(f64, @floatFromInt(OsFreq))});
-    std.log.debug("CPU Timer: {} -> {} = {} elapsed", .{ CPUStart, CPUEnd, CPUElapsed });
     std.log.debug("CPU Seconds: {d}", .{@as(f64, @floatFromInt(CPUElapsed)) / @as(f64, @floatFromInt(CpuFreq))});
 }

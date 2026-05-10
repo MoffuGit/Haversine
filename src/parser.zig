@@ -3,20 +3,23 @@ const Allocator = std.mem.Allocator;
 const json = @import("json.zig");
 const ascii = std.ascii;
 const ArrayList = std.ArrayList;
-const cpu = @import("cpu.zig");
+const GlobalProfiler = &@import("global.zig").GlobalProfiler;
+const Profiler = @import("profiler.zig");
 
 const Parser = @This();
 
 lexer: Lexer,
 alloc: Allocator,
-
-t: u64 = 0,
+zone: Profiler.Zone,
 
 pub fn init(self: *Parser, reader: *std.Io.Reader, alloc: Allocator) void {
     self.* = .{
+        .zone = .empty,
         .lexer = undefined,
         .alloc = alloc,
     };
+
+    self.zone.init(@src(), GlobalProfiler);
 
     self.lexer.init(reader, alloc);
 
@@ -28,6 +31,7 @@ pub fn init(self: *Parser, reader: *std.Io.Reader, alloc: Allocator) void {
 
 pub fn deinit(self: *Parser) void {
     self.lexer.deinit();
+    self.zone.deinit(false, GlobalProfiler);
 }
 
 pub fn next(self: *Parser) ?json.Points {
@@ -35,18 +39,10 @@ pub fn next(self: *Parser) ?json.Points {
 
     var point: u2 = 0;
     while (self.lexer.next_token()) |token| {
-        const start = cpu.readCpuTimer();
-        defer {
-            self.t += cpu.readCpuTimer() - start;
-        }
         if (token == .LBrace) break;
     }
 
     while (self.lexer.next_token()) |token| {
-        const start = cpu.readCpuTimer();
-        defer {
-            self.t += cpu.readCpuTimer() - start;
-        }
         switch (token) {
             .String => |s| {
                 if (std.mem.eql(u8, s, "x0")) point = 0b00;
@@ -99,8 +95,6 @@ const Lexer = struct {
     reader: *std.Io.Reader,
     alloc: Allocator,
     char: ?u8,
-
-    t: u64 = 0,
 
     list: ArrayList(u8) = .empty,
 
@@ -160,11 +154,6 @@ const Lexer = struct {
     }
 
     pub fn next_token(self: *Self) ?Token {
-        const start = cpu.readCpuTimer();
-        defer {
-            self.t += cpu.readCpuTimer() - start;
-        }
-
         self.skip_whitespace();
 
         const c = self.char orelse return null;
