@@ -25,6 +25,8 @@ pub fn main(init: std.process.Init) !void {
     const file = try std.Io.Dir.cwd().openFile(init.io, args.path, .{});
     defer file.close(init.io);
 
+    const file_size = (try file.stat(init.io)).size;
+
     var buffer: [1024 * 1024 * 8]u8 = undefined;
     var reader = file.reader(init.io, &buffer);
 
@@ -35,6 +37,10 @@ pub fn main(init: std.process.Init) !void {
     defer parser.deinit();
 
     var count: f64 = 0.0;
+
+    var z_read: Profiler.Zone = .empty;
+    z_read.init(@src(), GlobalProfiler, .{ .label = "reader", .bytes = file_size });
+    defer z_read.deinit(GlobalProfiler);
 
     var zone: Profiler.Zone = .empty;
     while (parser.next()) |p| {
