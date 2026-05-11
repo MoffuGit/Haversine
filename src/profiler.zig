@@ -301,7 +301,7 @@ test "Test Basic Profiler" {
     }
 
     var zone: Zone = .empty;
-    zone.init("basic", @src(), &profiler);
+    zone.init(@src(), &profiler, .{ .label = "basic" });
     defer zone.deinit(&profiler);
 
     try io.sleep(.fromSeconds(1), .real);
