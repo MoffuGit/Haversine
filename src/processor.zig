@@ -4,6 +4,7 @@ const mem = std.mem;
 const reference = @import("reference.zig");
 const Parser = @import("parser.zig");
 const Profiler = @import("profiler.zig");
+const json = @import("json.zig");
 
 const GlobalProfiler = &@import("global.zig").GlobalProfiler;
 
@@ -19,7 +20,7 @@ pub fn main(init: std.process.Init) !void {
     const args = try parse_args(init.minimal.args, gpa);
 
     var z_file: Profiler.Zone = .empty;
-    z_file.init("prepareFile", @src(), GlobalProfiler);
+    z_file.init(@src(), GlobalProfiler, .{ .label = "prepareFile" });
 
     const file = try std.Io.Dir.cwd().openFile(init.io, args.path, .{});
     defer file.close(init.io);
@@ -35,17 +36,20 @@ pub fn main(init: std.process.Init) !void {
 
     var count: f64 = 0.0;
 
+    var zone: Profiler.Zone = .empty;
     while (parser.next()) |p| {
-        var zone: Profiler.Zone = .empty;
-        zone.init("haversineFn", @src(), GlobalProfiler);
+        zone = .empty;
+
+        zone.init(@src(), GlobalProfiler, .{ .label = "haversineFn", .bytes = @sizeOf(json.Points) });
         defer zone.deinit(GlobalProfiler);
+
         count += reference.referenceHaversine(p.x0, p.y0, p.x1, p.y1, 6372.8);
     }
 
     const res = count / @as(f64, @floatFromInt(args.size));
 
     if (args.res != res) {
-        std.log.info("expected: {}, got: {}", .{ args.res, res });
+        std.log.err("expected: {}, got: {}", .{ args.res, res });
     }
 }
 
@@ -65,7 +69,7 @@ const Error =
 
 pub fn parse_args(args: std.process.Args, alloc: mem.Allocator) Error!Args {
     var zone: Profiler.Zone = .empty;
-    zone.init("processArgs", @src(), GlobalProfiler);
+    zone.init(@src(), GlobalProfiler, .{ .label = "processArgs" });
     defer zone.deinit(GlobalProfiler);
 
     var iter = try args.iterateAllocator(alloc);

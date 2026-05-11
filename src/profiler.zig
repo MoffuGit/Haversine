@@ -11,6 +11,20 @@ pub const Profiler = if (enabled) ProfilerImpl else NoopProfiler;
 pub const Zone = if (enabled) ZoneImpl else NoopZone;
 
 pub const Anchor = struct {
+    const Self = @This();
+
+    pub const empty: Self = .{
+        .elapsed_exclusive = 0,
+        .elapsed_inclusive = 0,
+        .hits = 0,
+        .src = undefined,
+        .parent = null,
+        .first_child = null,
+        .next_sibling = null,
+        .label = undefined,
+        .bytes = 0,
+    };
+
     elapsed_exclusive: u64,
     elapsed_inclusive: u64,
     hits: u64,
@@ -19,6 +33,7 @@ pub const Anchor = struct {
     first_child: ?u32,
     next_sibling: ?u32,
     label: []const u8,
+    bytes: u64,
 };
 
 pub const StackEntry = struct {
@@ -54,9 +69,9 @@ const NoopZone = struct {
 
     pub fn init(
         _: *NoopZone,
-        _: []const u8,
         _: builtin.SourceLocation,
         _: *NoopProfiler,
+        _: Options,
     ) void {}
 
     pub fn deinit(_: *NoopZone, _: *NoopProfiler) void {}
@@ -64,16 +79,7 @@ const NoopZone = struct {
 
 const ProfilerImpl = struct {
     pub const empty: ProfilerImpl = .{
-        .anchors = @splat(.{
-            .elapsed_exclusive = 0,
-            .elapsed_inclusive = 0,
-            .hits = 0,
-            .src = undefined,
-            .parent = null,
-            .first_child = null,
-            .next_sibling = null,
-            .label = undefined,
-        }),
+        .anchors = @splat(Anchor.empty),
         .stack = @splat(.{ .anchor_idx = 0, .first_child = null }),
         .root_first_child = null,
         .depth = 0,
@@ -123,7 +129,7 @@ const ProfilerImpl = struct {
                 const inclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.elapsed_inclusive)) / @as(f64, @floatFromInt(cpu_freq));
 
                 std.log.info(
-                    "  {s} {s} |{d:.4}ms, {d:.2}%| w/children |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}",
+                    "{s} {s} |{d:.4}ms, {d:.2}%| w/children |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}",
                     .{
                         indent,
                         anchor.label,
@@ -139,7 +145,7 @@ const ProfilerImpl = struct {
                 );
             } else {
                 std.log.info(
-                    "  {s} {s} |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}",
+                    "{s} {s} |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}",
                     .{
                         indent,
                         anchor.label,
@@ -150,6 +156,18 @@ const ProfilerImpl = struct {
                         anchor.src.line,
                         anchor.src.fn_name,
                     },
+                );
+            }
+
+            if (anchor.bytes > 0) {
+                const gigabyte: f64 = 1024.0 * 1024.0 * 1024.0;
+                const seconds = @as(f64, @floatFromInt(anchor.elapsed_inclusive)) / @as(f64, @floatFromInt(cpu_freq));
+                const gb = @as(f64, @floatFromInt(anchor.bytes)) / gigabyte;
+                const gbps = gb / seconds;
+
+                std.log.info(
+                    "{s}  → Memory |{d:.4}gb at {d:.4}gb/s|",
+                    .{ indent, gb, gbps },
                 );
             }
         }
@@ -176,6 +194,11 @@ fn sameSrc(a: builtin.SourceLocation, b: builtin.SourceLocation) bool {
         std.mem.eql(u8, a.fn_name, b.fn_name);
 }
 
+const Options = struct {
+    label: []const u8,
+    bytes: u64 = 0,
+};
+
 const ZoneImpl = struct {
     const Self = @This();
 
@@ -183,15 +206,17 @@ const ZoneImpl = struct {
     parent_idx: ?u32,
     old_elapsed_inclusive: u64,
     start: u64,
+    bytes: u64,
 
     pub const empty: ZoneImpl = .{
         .anchor_idx = 0,
         .parent_idx = null,
         .old_elapsed_inclusive = 0,
         .start = 0,
+        .bytes = 0,
     };
 
-    pub fn init(self: *Self, label: []const u8, src: builtin.SourceLocation, profiler: *ProfilerImpl) void {
+    pub fn init(self: *Self, src: builtin.SourceLocation, profiler: *ProfilerImpl, opts: Options) void {
         if (profiler.depth >= profiler.stack.len) @panic("Profiler MaxDepth Reached");
 
         const parent_slot = profiler.parentChildrenSlot();
@@ -222,13 +247,12 @@ const ZoneImpl = struct {
                 .parent = parent_idx,
                 .first_child = null,
                 .next_sibling = parent_slot.*,
-                .label = label,
+                .label = opts.label,
+                .bytes = 0,
             };
             parent_slot.* = idx;
         }
 
-        // Push onto stack, mirroring this anchor's first_child so children
-        // added during this zone's lifetime can update it without an anchor lookup.
         profiler.stack[profiler.depth] = .{
             .anchor_idx = idx,
             .first_child = profiler.anchors[idx].first_child,
@@ -236,6 +260,7 @@ const ZoneImpl = struct {
         profiler.depth += 1;
 
         self.* = .{
+            .bytes = opts.bytes,
             .anchor_idx = idx,
             .parent_idx = parent_idx,
             .old_elapsed_inclusive = profiler.anchors[idx].elapsed_inclusive,
@@ -255,6 +280,7 @@ const ZoneImpl = struct {
         anchor.elapsed_exclusive +%= elapsed;
         anchor.elapsed_inclusive = self.old_elapsed_inclusive + elapsed;
         anchor.hits += 1;
+        anchor.bytes += self.bytes;
 
         if (self.parent_idx) |p| {
             profiler.anchors[p].elapsed_exclusive -%= elapsed;

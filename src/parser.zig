@@ -19,26 +19,24 @@ pub fn init(self: *Parser, reader: *std.Io.Reader, alloc: Allocator) void {
         .alloc = alloc,
     };
 
-    self.zone.init("parser", @src(), GlobalProfiler);
     self.lexer.init(reader, alloc);
-
-    while (self.lexer.next_token()) |token| {
-        if (token == .LBracket) break;
-    }
 }
 
 pub fn deinit(self: *Parser) void {
     self.lexer.deinit();
-    self.zone.deinit(GlobalProfiler);
 }
 
 pub fn next(self: *Parser) ?json.Points {
-    var points: json.Points = .{};
+    self.zone = .empty;
+    self.zone.init(@src(), GlobalProfiler, .{ .label = "parser" });
+    defer self.zone.deinit(GlobalProfiler);
 
-    var point: u2 = 0;
     while (self.lexer.next_token()) |token| {
-        if (token == .LBrace) break;
+        if (token == .LBrace or token == .LBracket) break;
     }
+
+    var points: json.Points = .{};
+    var point: u2 = 0;
 
     while (self.lexer.next_token()) |token| {
         switch (token) {
@@ -93,6 +91,7 @@ const Lexer = struct {
     reader: *std.Io.Reader,
     alloc: Allocator,
     char: ?u8,
+    zone: Profiler.Zone,
 
     list: ArrayList(u8) = .empty,
 
@@ -101,6 +100,7 @@ const Lexer = struct {
             .char = null,
             .reader = reader,
             .alloc = alloc,
+            .zone = .empty,
         };
 
         self.read_char();
@@ -152,6 +152,10 @@ const Lexer = struct {
     }
 
     pub fn next_token(self: *Self) ?Token {
+        self.zone = .empty;
+        self.zone.init(@src(), GlobalProfiler, .{ .label = "lexer" });
+        defer self.zone.deinit(GlobalProfiler);
+
         self.skip_whitespace();
 
         const c = self.char orelse return null;
