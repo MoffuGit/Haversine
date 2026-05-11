@@ -16,6 +16,7 @@ pub const empty: Profiler = .{
         .parent = null,
         .first_child = null,
         .next_sibling = null,
+        .label = undefined,
     }),
     .stack = @splat(.{ .anchor_idx = 0, .first_child = null }),
     .root_first_child = null,
@@ -64,20 +65,40 @@ pub fn log(self: *Profiler) void {
         const exclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.elapsed_exclusive)) / @as(f64, @floatFromInt(cpu_freq));
 
         const depth = self.anchorDepth(@intCast(i));
-        const indent = indent_buf[0 .. depth * 2];
+        const indent = indent_buf[0 .. depth * 4];
 
         if (has_children) {
             const inclusive_pct = (100.0 * @as(f64, @floatFromInt(anchor.elapsed_inclusive))) / @as(f64, @floatFromInt(total_elapsed));
             const inclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.elapsed_inclusive)) / @as(f64, @floatFromInt(cpu_freq));
 
             std.log.info(
-                "  {s}[{d}] {s}:{d} {s} -- self ({d:.4}ms, {d:.2}%), w/children ({d:.4}ms, {d:.2}%), hits: {d}",
-                .{ indent, i, anchor.src.file, anchor.src.line, anchor.src.fn_name, exclusive_ms, exclusive_pct, inclusive_ms, inclusive_pct, anchor.hits },
+                "  {s} {s} |{d:.4}ms, {d:.2}%| w/children |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}",
+                .{
+                    indent,
+                    anchor.label,
+                    exclusive_ms,
+                    exclusive_pct,
+                    inclusive_ms,
+                    inclusive_pct,
+                    anchor.hits,
+                    anchor.src.file,
+                    anchor.src.line,
+                    anchor.src.fn_name,
+                },
             );
         } else {
             std.log.info(
-                "  {s}[{d}] {s}:{d} {s} -- ({d:.4}ms, {d:.2}%), hits: {d}",
-                .{ indent, i, anchor.src.file, anchor.src.line, anchor.src.fn_name, exclusive_ms, exclusive_pct, anchor.hits },
+                "  {s} {s} |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}",
+                .{
+                    indent,
+                    anchor.label,
+                    exclusive_ms,
+                    exclusive_pct,
+                    anchor.hits,
+                    anchor.src.file,
+                    anchor.src.line,
+                    anchor.src.fn_name,
+                },
             );
         }
     }
@@ -111,10 +132,16 @@ pub const Anchor = struct {
     parent: ?u32,
     first_child: ?u32,
     next_sibling: ?u32,
+    label: []const u8,
 };
 
 pub const Zone = struct {
     const Self = @This();
+
+    anchor_idx: u32,
+    parent_idx: ?u32,
+    old_elapsed_inclusive: u64,
+    start: u64,
 
     pub const empty: Zone = .{
         .anchor_idx = 0,
@@ -123,7 +150,7 @@ pub const Zone = struct {
         .start = 0,
     };
 
-    pub fn init(self: *Self, src: builtin.SourceLocation, profiler: *Profiler) void {
+    pub fn init(self: *Self, label: []const u8, src: builtin.SourceLocation, profiler: *Profiler) void {
         if (profiler.depth >= profiler.stack.len) @panic("Profiler MaxDepth Reached");
 
         const parent_slot = profiler.parentChildrenSlot();
@@ -154,6 +181,7 @@ pub const Zone = struct {
                 .parent = parent_idx,
                 .first_child = null,
                 .next_sibling = parent_slot.*,
+                .label = label,
             };
             parent_slot.* = idx;
         }
@@ -191,11 +219,6 @@ pub const Zone = struct {
             profiler.anchors[p].elapsed_exclusive -%= elapsed;
         }
     }
-
-    anchor_idx: u32,
-    parent_idx: ?u32,
-    old_elapsed_inclusive: u64,
-    start: u64,
 };
 
 test "Test Basic Profiler" {

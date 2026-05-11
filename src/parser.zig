@@ -19,7 +19,7 @@ pub fn init(self: *Parser, reader: *std.Io.Reader, alloc: Allocator) void {
         .alloc = alloc,
     };
 
-    self.zone.init(@src(), GlobalProfiler);
+    self.zone.init("parser", @src(), GlobalProfiler);
 
     self.lexer.init(reader, alloc);
 
