@@ -2,127 +2,13 @@ const std = @import("std");
 const builtin = std.builtin;
 const cpu = @import("cpu.zig");
 
-pub const Profiler = @This();
+pub const enabled = @import("build_options").profiler;
 
 pub const max_anchors = 4096;
 pub const max_depth = 256;
 
-pub const empty: Profiler = .{
-    .anchors = @splat(.{
-        .elapsed_exclusive = 0,
-        .elapsed_inclusive = 0,
-        .hits = 0,
-        .src = undefined,
-        .parent = null,
-        .first_child = null,
-        .next_sibling = null,
-        .label = undefined,
-    }),
-    .stack = @splat(.{ .anchor_idx = 0, .first_child = null }),
-    .root_first_child = null,
-    .depth = 0,
-    .anchor_count = 0,
-    .start = 0,
-    .end = 0,
-};
-
-anchors: [max_anchors]Anchor,
-stack: [max_depth]StackEntry,
-root_first_child: ?u32,
-depth: usize,
-anchor_count: usize,
-start: u64,
-end: u64,
-
-pub const StackEntry = struct {
-    anchor_idx: u32,
-    first_child: ?u32,
-};
-
-pub fn init(self: *Profiler) void {
-    self.start = cpu.readCpuTimer();
-}
-
-pub fn deinit(self: *Profiler) void {
-    self.end = cpu.readCpuTimer();
-}
-
-pub fn log(self: *Profiler) void {
-    const cpu_freq = cpu.readCpuFreq();
-    const total_elapsed = self.end - self.start;
-    const total_ms = 1000.0 * @as(f64, @floatFromInt(total_elapsed)) / @as(f64, @floatFromInt(cpu_freq));
-
-    std.log.info("Total time: {d:.4}ms (CPU freq {d})", .{ total_ms, cpu_freq });
-
-    var indent_buf: [max_depth * 2]u8 = @splat(' ');
-
-    for (self.anchors[0..self.anchor_count], 0..) |anchor, i| {
-        if (anchor.hits == 0) continue;
-
-        const has_children = anchor.elapsed_exclusive != anchor.elapsed_inclusive;
-
-        const exclusive_pct = (100.0 * @as(f64, @floatFromInt(anchor.elapsed_exclusive))) / @as(f64, @floatFromInt(total_elapsed));
-        const exclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.elapsed_exclusive)) / @as(f64, @floatFromInt(cpu_freq));
-
-        const depth = self.anchorDepth(@intCast(i));
-        const indent = indent_buf[0 .. depth * 4];
-
-        if (has_children) {
-            const inclusive_pct = (100.0 * @as(f64, @floatFromInt(anchor.elapsed_inclusive))) / @as(f64, @floatFromInt(total_elapsed));
-            const inclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.elapsed_inclusive)) / @as(f64, @floatFromInt(cpu_freq));
-
-            std.log.info(
-                "  {s} {s} |{d:.4}ms, {d:.2}%| w/children |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}",
-                .{
-                    indent,
-                    anchor.label,
-                    exclusive_ms,
-                    exclusive_pct,
-                    inclusive_ms,
-                    inclusive_pct,
-                    anchor.hits,
-                    anchor.src.file,
-                    anchor.src.line,
-                    anchor.src.fn_name,
-                },
-            );
-        } else {
-            std.log.info(
-                "  {s} {s} |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}",
-                .{
-                    indent,
-                    anchor.label,
-                    exclusive_ms,
-                    exclusive_pct,
-                    anchor.hits,
-                    anchor.src.file,
-                    anchor.src.line,
-                    anchor.src.fn_name,
-                },
-            );
-        }
-    }
-}
-
-fn anchorDepth(self: *Profiler, idx: u32) usize {
-    var depth: usize = 0;
-    var cur: ?u32 = self.anchors[idx].parent;
-    while (cur) |p| : (depth += 1) {
-        cur = self.anchors[p].parent;
-    }
-    return depth;
-}
-
-fn parentChildrenSlot(self: *Profiler) *?u32 {
-    return if (self.depth == 0) &self.root_first_child else &self.stack[self.depth - 1].first_child;
-}
-
-fn sameSrc(a: builtin.SourceLocation, b: builtin.SourceLocation) bool {
-    return a.line == b.line and
-        a.column == b.column and
-        std.mem.eql(u8, a.file, b.file) and
-        std.mem.eql(u8, a.fn_name, b.fn_name);
-}
+pub const Profiler = if (enabled) ProfilerImpl else NoopProfiler;
+pub const Zone = if (enabled) ZoneImpl else NoopZone;
 
 pub const Anchor = struct {
     elapsed_exclusive: u64,
@@ -135,7 +21,162 @@ pub const Anchor = struct {
     label: []const u8,
 };
 
-pub const Zone = struct {
+pub const StackEntry = struct {
+    anchor_idx: u32,
+    first_child: ?u32,
+};
+
+const NoopProfiler = struct {
+    start: u64 = 0,
+    end: u64 = 0,
+
+    pub const empty: NoopProfiler = .{};
+
+    pub fn init(self: *NoopProfiler) void {
+        self.start = cpu.readCpuTimer();
+    }
+
+    pub fn deinit(self: *NoopProfiler) void {
+        self.end = cpu.readCpuTimer();
+    }
+
+    pub fn log(self: *NoopProfiler) void {
+        const cpu_freq = cpu.readCpuFreq();
+        const total_elapsed = self.end - self.start;
+        const total_ms = 1000.0 * @as(f64, @floatFromInt(total_elapsed)) / @as(f64, @floatFromInt(cpu_freq));
+
+        std.log.info("Total time: {d:.4}ms (CPU freq {d})", .{ total_ms, cpu_freq });
+    }
+};
+
+const NoopZone = struct {
+    pub const empty: NoopZone = .{};
+
+    pub fn init(
+        _: *NoopZone,
+        _: []const u8,
+        _: builtin.SourceLocation,
+        _: *NoopProfiler,
+    ) void {}
+
+    pub fn deinit(_: *NoopZone, _: *NoopProfiler) void {}
+};
+
+const ProfilerImpl = struct {
+    pub const empty: ProfilerImpl = .{
+        .anchors = @splat(.{
+            .elapsed_exclusive = 0,
+            .elapsed_inclusive = 0,
+            .hits = 0,
+            .src = undefined,
+            .parent = null,
+            .first_child = null,
+            .next_sibling = null,
+            .label = undefined,
+        }),
+        .stack = @splat(.{ .anchor_idx = 0, .first_child = null }),
+        .root_first_child = null,
+        .depth = 0,
+        .anchor_count = 0,
+        .start = 0,
+        .end = 0,
+    };
+
+    anchors: [max_anchors]Anchor,
+    stack: [max_depth]StackEntry,
+    root_first_child: ?u32,
+    depth: usize,
+    anchor_count: usize,
+    start: u64,
+    end: u64,
+
+    pub fn init(self: *ProfilerImpl) void {
+        self.start = cpu.readCpuTimer();
+    }
+
+    pub fn deinit(self: *ProfilerImpl) void {
+        self.end = cpu.readCpuTimer();
+    }
+
+    pub fn log(self: *ProfilerImpl) void {
+        const cpu_freq = cpu.readCpuFreq();
+        const total_elapsed = self.end - self.start;
+        const total_ms = 1000.0 * @as(f64, @floatFromInt(total_elapsed)) / @as(f64, @floatFromInt(cpu_freq));
+
+        std.log.info("Total time: {d:.4}ms (CPU freq {d})", .{ total_ms, cpu_freq });
+
+        var indent_buf: [max_depth * 2]u8 = @splat(' ');
+
+        for (self.anchors[0..self.anchor_count], 0..) |anchor, i| {
+            if (anchor.hits == 0) continue;
+
+            const has_children = anchor.elapsed_exclusive != anchor.elapsed_inclusive;
+
+            const exclusive_pct = (100.0 * @as(f64, @floatFromInt(anchor.elapsed_exclusive))) / @as(f64, @floatFromInt(total_elapsed));
+            const exclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.elapsed_exclusive)) / @as(f64, @floatFromInt(cpu_freq));
+
+            const depth = self.anchorDepth(@intCast(i));
+            const indent = indent_buf[0 .. depth * 4];
+
+            if (has_children) {
+                const inclusive_pct = (100.0 * @as(f64, @floatFromInt(anchor.elapsed_inclusive))) / @as(f64, @floatFromInt(total_elapsed));
+                const inclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.elapsed_inclusive)) / @as(f64, @floatFromInt(cpu_freq));
+
+                std.log.info(
+                    "  {s} {s} |{d:.4}ms, {d:.2}%| w/children |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}",
+                    .{
+                        indent,
+                        anchor.label,
+                        exclusive_ms,
+                        exclusive_pct,
+                        inclusive_ms,
+                        inclusive_pct,
+                        anchor.hits,
+                        anchor.src.file,
+                        anchor.src.line,
+                        anchor.src.fn_name,
+                    },
+                );
+            } else {
+                std.log.info(
+                    "  {s} {s} |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}",
+                    .{
+                        indent,
+                        anchor.label,
+                        exclusive_ms,
+                        exclusive_pct,
+                        anchor.hits,
+                        anchor.src.file,
+                        anchor.src.line,
+                        anchor.src.fn_name,
+                    },
+                );
+            }
+        }
+    }
+
+    fn anchorDepth(self: *ProfilerImpl, idx: u32) usize {
+        var depth: usize = 0;
+        var cur: ?u32 = self.anchors[idx].parent;
+        while (cur) |p| : (depth += 1) {
+            cur = self.anchors[p].parent;
+        }
+        return depth;
+    }
+
+    fn parentChildrenSlot(self: *ProfilerImpl) *?u32 {
+        return if (self.depth == 0) &self.root_first_child else &self.stack[self.depth - 1].first_child;
+    }
+};
+
+fn sameSrc(a: builtin.SourceLocation, b: builtin.SourceLocation) bool {
+    return a.line == b.line and
+        a.column == b.column and
+        std.mem.eql(u8, a.file, b.file) and
+        std.mem.eql(u8, a.fn_name, b.fn_name);
+}
+
+const ZoneImpl = struct {
     const Self = @This();
 
     anchor_idx: u32,
@@ -143,14 +184,14 @@ pub const Zone = struct {
     old_elapsed_inclusive: u64,
     start: u64,
 
-    pub const empty: Zone = .{
+    pub const empty: ZoneImpl = .{
         .anchor_idx = 0,
         .parent_idx = null,
         .old_elapsed_inclusive = 0,
         .start = 0,
     };
 
-    pub fn init(self: *Self, label: []const u8, src: builtin.SourceLocation, profiler: *Profiler) void {
+    pub fn init(self: *Self, label: []const u8, src: builtin.SourceLocation, profiler: *ProfilerImpl) void {
         if (profiler.depth >= profiler.stack.len) @panic("Profiler MaxDepth Reached");
 
         const parent_slot = profiler.parentChildrenSlot();
@@ -202,7 +243,7 @@ pub const Zone = struct {
         };
     }
 
-    pub fn deinit(self: *Self, profiler: *Profiler) void {
+    pub fn deinit(self: *Self, profiler: *ProfilerImpl) void {
         profiler.depth -= 1;
         std.debug.assert(profiler.stack[profiler.depth].anchor_idx == self.anchor_idx);
 
@@ -234,7 +275,7 @@ test "Test Basic Profiler" {
     }
 
     var zone: Zone = .empty;
-    zone.init(@src(), &profiler);
+    zone.init("basic", @src(), &profiler);
     defer zone.deinit(&profiler);
 
     try io.sleep(.fromSeconds(1), .real);

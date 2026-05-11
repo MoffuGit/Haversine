@@ -20,10 +20,8 @@ pub fn init(self: *Parser, reader: *std.Io.Reader, alloc: Allocator) void {
     };
 
     self.zone.init("parser", @src(), GlobalProfiler);
-
     self.lexer.init(reader, alloc);
 
-    //advance to the [points];
     while (self.lexer.next_token()) |token| {
         if (token == .LBracket) break;
     }

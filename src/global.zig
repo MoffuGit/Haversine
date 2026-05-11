@@ -1,3 +1,3 @@
-const Profiler = @import("profiler.zig");
+const profiler = @import("profiler.zig");
 
-pub var GlobalProfiler: Profiler = undefined;
+pub var GlobalProfiler: profiler.Profiler = undefined;
