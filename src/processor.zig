@@ -27,7 +27,7 @@ pub fn main(init: std.process.Init) !void {
     var buffer: [1024 * 1024 * 8]u8 = undefined;
     var reader = file.reader(init.io, &buffer);
 
-    file_zone.deinit(true, GlobalProfiler);
+    file_zone.deinit(GlobalProfiler);
 
     var parser: Parser = undefined;
     parser.init(&reader.interface, gpa);
@@ -38,7 +38,7 @@ pub fn main(init: std.process.Init) !void {
     while (parser.next()) |p| {
         var zone: Profiler.Zone = .empty;
         zone.init(@src(), GlobalProfiler);
-        defer zone.deinit(false, GlobalProfiler);
+        defer zone.deinit(GlobalProfiler);
         count += reference.referenceHaversine(p.x0, p.y0, p.x1, p.y1, 6372.8);
     }
 
@@ -66,7 +66,7 @@ const Error =
 pub fn parse_args(args: std.process.Args, alloc: mem.Allocator) Error!Args {
     var zone: Profiler.Zone = .empty;
     zone.init(@src(), GlobalProfiler);
-    zone.deinit(true, GlobalProfiler);
+    defer zone.deinit(GlobalProfiler);
 
     var iter = try args.iterateAllocator(alloc);
     _ = iter.next();

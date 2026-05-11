@@ -31,7 +31,7 @@ pub fn init(self: *Parser, reader: *std.Io.Reader, alloc: Allocator) void {
 
 pub fn deinit(self: *Parser) void {
     self.lexer.deinit();
-    self.zone.deinit(false, GlobalProfiler);
+    self.zone.deinit(GlobalProfiler);
 }
 
 pub fn next(self: *Parser) ?json.Points {
