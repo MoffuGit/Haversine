@@ -1,6 +1,9 @@
 const std = @import("std");
 const builtin = std.builtin;
+const target = @import("builtin");
 const cpu = @import("cpu.zig");
+const posix = std.posix;
+const print = std.debug.print;
 
 pub const enabled = @import("build_options").profiler;
 
@@ -10,30 +13,51 @@ pub const max_depth = 256;
 pub const Profiler = if (enabled) ProfilerImpl else NoopProfiler;
 pub const Zone = if (enabled) ZoneImpl else NoopZone;
 
+pub const Data = struct {
+    elapsed: u64 = 0,
+    bytes: u64 = 0,
+    ru_minflt: isize = 0,
+    ru_majflt: isize = 0,
+
+    pub const empty: Data = .{};
+
+    pub fn add(self: *Data, other: Data) void {
+        self.elapsed +%= other.elapsed;
+        self.bytes +%= other.bytes;
+        self.ru_minflt += other.ru_minflt;
+        self.ru_majflt += other.ru_majflt;
+    }
+
+    pub fn sub(self: *Data, other: Data) void {
+        self.elapsed -%= other.elapsed;
+        self.bytes -%= other.bytes;
+        self.ru_minflt -= other.ru_minflt;
+        self.ru_majflt -= other.ru_majflt;
+    }
+};
+
 pub const Anchor = struct {
     const Self = @This();
 
     pub const empty: Self = .{
-        .elapsed_exclusive = 0,
-        .elapsed_inclusive = 0,
+        .exclusive = .empty,
+        .inclusive = .empty,
         .hits = 0,
         .src = undefined,
         .parent = null,
         .first_child = null,
         .next_sibling = null,
         .label = undefined,
-        .bytes = 0,
     };
 
-    elapsed_exclusive: u64,
-    elapsed_inclusive: u64,
+    exclusive: Data,
+    inclusive: Data,
     hits: u64,
-    src: builtin.SourceLocation,
     parent: ?u32,
     first_child: ?u32,
     next_sibling: ?u32,
+    src: builtin.SourceLocation,
     label: []const u8,
-    bytes: u64,
 };
 
 pub const StackEntry = struct {
@@ -56,11 +80,13 @@ const NoopProfiler = struct {
     }
 
     pub fn log(self: *NoopProfiler) void {
-        const cpu_freq = cpu.readCpuFreq();
+        const timer_freq = cpu.readTimerFreq();
         const total_elapsed = self.end - self.start;
-        const total_ms = 1000.0 * @as(f64, @floatFromInt(total_elapsed)) / @as(f64, @floatFromInt(cpu_freq));
+        const total_ms = 1000.0 * @as(f64, @floatFromInt(total_elapsed)) / @as(f64, @floatFromInt(timer_freq));
 
-        std.log.info("Total time: {d:.4}ms (CPU freq {d})", .{ total_ms, cpu_freq });
+        printHeader(80);
+        logSystemInfo(timer_freq);
+        print("Total time: {d:.4}ms\n", .{total_ms});
     }
 };
 
@@ -105,31 +131,33 @@ const ProfilerImpl = struct {
     }
 
     pub fn log(self: *ProfilerImpl) void {
-        const cpu_freq = cpu.readCpuFreq();
+        const timer_freq = cpu.readTimerFreq();
         const total_elapsed = self.end - self.start;
-        const total_ms = 1000.0 * @as(f64, @floatFromInt(total_elapsed)) / @as(f64, @floatFromInt(cpu_freq));
+        const total_ms = 1000.0 * @as(f64, @floatFromInt(total_elapsed)) / @as(f64, @floatFromInt(timer_freq));
 
-        std.log.info("Total time: {d:.4}ms (CPU freq {d})", .{ total_ms, cpu_freq });
+        printHeader(80);
+        logSystemInfo(timer_freq);
+        print("Total time: {d:.4}ms\n", .{total_ms});
 
         var indent_buf: [max_depth * 2]u8 = @splat(' ');
 
         for (self.anchors[0..self.anchor_count], 0..) |anchor, i| {
             if (anchor.hits == 0) continue;
 
-            const has_children = anchor.elapsed_exclusive != anchor.elapsed_inclusive;
+            const has_children = anchor.exclusive.elapsed != anchor.inclusive.elapsed;
 
-            const exclusive_pct = (100.0 * @as(f64, @floatFromInt(anchor.elapsed_exclusive))) / @as(f64, @floatFromInt(total_elapsed));
-            const exclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.elapsed_exclusive)) / @as(f64, @floatFromInt(cpu_freq));
+            const exclusive_pct = (100.0 * @as(f64, @floatFromInt(anchor.exclusive.elapsed))) / @as(f64, @floatFromInt(total_elapsed));
+            const exclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.exclusive.elapsed)) / @as(f64, @floatFromInt(timer_freq));
 
             const depth = self.anchorDepth(@intCast(i));
             const indent = indent_buf[0 .. depth * 4];
 
             if (has_children) {
-                const inclusive_pct = (100.0 * @as(f64, @floatFromInt(anchor.elapsed_inclusive))) / @as(f64, @floatFromInt(total_elapsed));
-                const inclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.elapsed_inclusive)) / @as(f64, @floatFromInt(cpu_freq));
+                const inclusive_pct = (100.0 * @as(f64, @floatFromInt(anchor.inclusive.elapsed))) / @as(f64, @floatFromInt(total_elapsed));
+                const inclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.inclusive.elapsed)) / @as(f64, @floatFromInt(timer_freq));
 
-                std.log.info(
-                    "{s} {s} |{d:.4}ms, {d:.2}%| w/children |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}",
+                print(
+                    "{s} {s} |{d:.4}ms, {d:.2}%| w/children |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}\n",
                     .{
                         indent,
                         anchor.label,
@@ -144,8 +172,8 @@ const ProfilerImpl = struct {
                     },
                 );
             } else {
-                std.log.info(
-                    "{s} {s} |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}",
+                print(
+                    "{s} {s} |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}\n",
                     .{
                         indent,
                         anchor.label,
@@ -159,16 +187,35 @@ const ProfilerImpl = struct {
                 );
             }
 
-            if (anchor.bytes > 0) {
+            if (anchor.inclusive.bytes > 0) {
                 const gigabyte: f64 = 1024.0 * 1024.0 * 1024.0;
-                const seconds = @as(f64, @floatFromInt(anchor.elapsed_inclusive)) / @as(f64, @floatFromInt(cpu_freq));
-                const gb = @as(f64, @floatFromInt(anchor.bytes)) / gigabyte;
+                const seconds = @as(f64, @floatFromInt(anchor.inclusive.elapsed)) / @as(f64, @floatFromInt(timer_freq));
+                const gb = @as(f64, @floatFromInt(anchor.inclusive.bytes)) / gigabyte;
                 const gbps = gb / seconds;
 
-                std.log.info(
-                    "{s}  → Memory |{d:.4}gb at {d:.4}gb/s|",
+                print(
+                    "{s}  → Memory |{d:.4}gb at {d:.4}gb/s|\n",
                     .{ indent, gb, gbps },
                 );
+            }
+            if (anchor.inclusive.ru_majflt > 0 or anchor.inclusive.ru_minflt > 0) {
+                if (has_children) {
+                    print(
+                        "{s}  → Page Faults |min: {}, maj: {}| w/children |min: {}, maj: {}|\n",
+                        .{
+                            indent,
+                            anchor.exclusive.ru_minflt,
+                            anchor.exclusive.ru_majflt,
+                            anchor.inclusive.ru_minflt,
+                            anchor.inclusive.ru_majflt,
+                        },
+                    );
+                } else {
+                    print(
+                        "{s}  → Page Faults |min: {}, maj: {}|\n",
+                        .{ indent, anchor.exclusive.ru_minflt, anchor.exclusive.ru_majflt },
+                    );
+                }
             }
         }
     }
@@ -187,6 +234,38 @@ const ProfilerImpl = struct {
     }
 };
 
+fn logSystemInfo(timer_freq: u64) void {
+    const cpu_count = std.Thread.getCpuCount() catch 0;
+    print(
+        "OS: {s} | Arch: {s} | CPU: {s} ({d} cores) | Timer freq: {d}\n",
+        .{
+            @tagName(target.os.tag),
+            @tagName(target.cpu.arch),
+            target.cpu.model.name,
+            cpu_count,
+            timer_freq,
+        },
+    );
+}
+
+fn printHeader(length: usize) void {
+    if (length < 2) return;
+
+    print("┌", .{});
+    var i: usize = 0;
+    while (i < length - 2) : (i += 1) {
+        print("┬", .{});
+    }
+    print("┐\n", .{});
+
+    print("└", .{});
+    i = 0;
+    while (i < length - 2) : (i += 1) {
+        print("┴", .{});
+    }
+    print("┘\n", .{});
+}
+
 pub fn sameSrc(a: builtin.SourceLocation, b: builtin.SourceLocation) bool {
     return a.line == b.line and
         a.column == b.column and
@@ -204,16 +283,20 @@ const ZoneImpl = struct {
 
     anchor_idx: u32,
     parent_idx: ?u32,
-    old_elapsed_inclusive: u64,
+    old_inclusive: Data,
     start: u64,
     bytes: u64,
+    start_ru_minflt: isize,
+    start_ru_majflt: isize,
 
     pub const empty: ZoneImpl = .{
         .anchor_idx = 0,
         .parent_idx = null,
-        .old_elapsed_inclusive = 0,
+        .old_inclusive = .empty,
         .start = 0,
         .bytes = 0,
+        .start_ru_majflt = 0,
+        .start_ru_minflt = 0,
     };
 
     pub fn init(self: *Self, src: builtin.SourceLocation, profiler: *ProfilerImpl, opts: Options) void {
@@ -240,15 +323,14 @@ const ZoneImpl = struct {
             idx = @intCast(profiler.anchor_count);
             profiler.anchor_count += 1;
             profiler.anchors[idx] = .{
-                .elapsed_exclusive = 0,
-                .elapsed_inclusive = 0,
+                .exclusive = .empty,
+                .inclusive = .empty,
                 .hits = 0,
                 .src = src,
                 .parent = parent_idx,
                 .first_child = null,
                 .next_sibling = parent_slot.*,
                 .label = opts.label,
-                .bytes = 0,
             };
             parent_slot.* = idx;
         }
@@ -259,12 +341,16 @@ const ZoneImpl = struct {
         };
         profiler.depth += 1;
 
+        const rusage = posix.getrusage(0);
+
         self.* = .{
             .bytes = opts.bytes,
             .anchor_idx = idx,
             .parent_idx = parent_idx,
-            .old_elapsed_inclusive = profiler.anchors[idx].elapsed_inclusive,
+            .old_inclusive = profiler.anchors[idx].inclusive,
             .start = cpu.readCpuTimer(),
+            .start_ru_minflt = rusage.minflt,
+            .start_ru_majflt = rusage.majflt,
         };
     }
 
@@ -274,16 +360,25 @@ const ZoneImpl = struct {
 
         const elapsed = cpu.readCpuTimer() - self.start;
 
+        const rusage = posix.getrusage(0);
+
+        const delta: Data = .{
+            .elapsed = elapsed,
+            .bytes = self.bytes,
+            .ru_minflt = rusage.minflt - self.start_ru_minflt,
+            .ru_majflt = rusage.majflt - self.start_ru_majflt,
+        };
+
         const anchor = &profiler.anchors[self.anchor_idx];
         // Sync any newly-added children back to the anchor.
         anchor.first_child = profiler.stack[profiler.depth].first_child;
-        anchor.elapsed_exclusive +%= elapsed;
-        anchor.elapsed_inclusive = self.old_elapsed_inclusive + elapsed;
+        anchor.exclusive.add(delta);
+        anchor.inclusive = self.old_inclusive;
+        anchor.inclusive.add(delta);
         anchor.hits += 1;
-        anchor.bytes += self.bytes;
 
         if (self.parent_idx) |p| {
-            profiler.anchors[p].elapsed_exclusive -%= elapsed;
+            profiler.anchors[p].exclusive.sub(delta);
         }
     }
 };

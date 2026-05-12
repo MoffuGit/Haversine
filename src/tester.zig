@@ -88,7 +88,7 @@ pub const AggAnchor = struct {
 
 alloc: Allocator,
 config: Config,
-cpu_freq: u64,
+timer_freq: u64,
 
 profiler: Profiler,
 
@@ -104,7 +104,7 @@ last_min_tick: u64,
 pub const empty: Tester = .{
     .alloc = undefined,
     .config = .{},
-    .cpu_freq = 0,
+    .timer_freq = 0,
     .profiler = .empty,
     .anchors = .empty,
     .root_first_child = null,
@@ -118,7 +118,7 @@ pub fn init(self: *Tester, alloc: Allocator, config: Config) void {
     self.* = .{
         .alloc = alloc,
         .config = config,
-        .cpu_freq = cpu.readCpuFreq(),
+        .timer_freq = cpu.readTimerFreq(),
         .profiler = .empty,
         .anchors = .empty,
         .root_first_child = null,
@@ -142,7 +142,7 @@ pub fn run(
     ctx: *Context,
     callback: *const fn (ctx: *Context, profiler: *Profiler) anyerror!void,
 ) !void {
-    const stale_ticks = (self.config.stop_after_no_new_min_ms * self.cpu_freq) / 1000;
+    const stale_ticks = (self.config.stop_after_no_new_min_ms * self.timer_freq) / 1000;
     self.last_min_tick = cpu.readCpuTimer();
 
     while (true) {
@@ -203,14 +203,14 @@ fn registerChildren(
 
         agg.run_count += 1;
         pushU64(&agg.hits_per_run_min, &agg.hits_per_run_max, &agg.hits_per_run_sum, run_anchor.hits);
-        pushU64(&agg.exclusive_min, &agg.exclusive_max, &agg.exclusive_sum, run_anchor.elapsed_exclusive);
-        pushU64(&agg.inclusive_min, &agg.inclusive_max, &agg.inclusive_sum, run_anchor.elapsed_inclusive);
-        pushU64(&agg.bytes_min, &agg.bytes_max, &agg.bytes_sum, run_anchor.bytes);
+        pushU64(&agg.exclusive_min, &agg.exclusive_max, &agg.exclusive_sum, run_anchor.exclusive.elapsed);
+        pushU64(&agg.inclusive_min, &agg.inclusive_max, &agg.inclusive_sum, run_anchor.inclusive.elapsed);
+        pushU64(&agg.bytes_min, &agg.bytes_max, &agg.bytes_sum, run_anchor.inclusive.bytes);
 
-        if (run_anchor.bytes > 0 and run_anchor.elapsed_inclusive > 0) {
+        if (run_anchor.inclusive.bytes > 0 and run_anchor.inclusive.elapsed > 0) {
             const gigabyte: f64 = 1024.0 * 1024.0 * 1024.0;
-            const gb = @as(f64, @floatFromInt(run_anchor.bytes)) / gigabyte;
-            const seconds = @as(f64, @floatFromInt(run_anchor.elapsed_inclusive)) / @as(f64, @floatFromInt(self.cpu_freq));
+            const gb = @as(f64, @floatFromInt(run_anchor.inclusive.bytes)) / gigabyte;
+            const seconds = @as(f64, @floatFromInt(run_anchor.inclusive.elapsed)) / @as(f64, @floatFromInt(self.timer_freq));
             const gbps = gb / seconds;
 
             if (!agg.gbps_seen) {
@@ -273,16 +273,16 @@ pub fn log(self: *const Tester) void {
         return;
     }
 
-    const cpu_freq_f: f64 = @floatFromInt(self.cpu_freq);
+    const timer_freq_f: f64 = @floatFromInt(self.timer_freq);
     const runs_f: f64 = @floatFromInt(self.run_count);
 
-    const total_min_ms = 1000.0 * @as(f64, @floatFromInt(self.total.min)) / cpu_freq_f;
-    const total_max_ms = 1000.0 * @as(f64, @floatFromInt(self.total.max)) / cpu_freq_f;
-    const total_avg_ms = 1000.0 * (@as(f64, @floatFromInt(self.total.sum)) / runs_f) / cpu_freq_f;
+    const total_min_ms = 1000.0 * @as(f64, @floatFromInt(self.total.min)) / timer_freq_f;
+    const total_max_ms = 1000.0 * @as(f64, @floatFromInt(self.total.max)) / timer_freq_f;
+    const total_avg_ms = 1000.0 * (@as(f64, @floatFromInt(self.total.sum)) / runs_f) / timer_freq_f;
 
     std.log.info(
-        "runs:{d} | min:{d:.4}ms avg:{d:.4}ms max:{d:.4}ms (CPU freq {d})",
-        .{ self.run_count, total_min_ms, total_avg_ms, total_max_ms, self.cpu_freq },
+        "runs:{d} | min:{d:.4}ms avg:{d:.4}ms max:{d:.4}ms (Timer freq {d})",
+        .{ self.run_count, total_min_ms, total_avg_ms, total_max_ms, self.timer_freq },
     );
 
     if (comptime !profiler_mod.enabled) {
@@ -296,7 +296,7 @@ pub fn log(self: *const Tester) void {
 fn logChildren(self: *const Tester, child_idx: ?u32, depth: usize) void {
     if (comptime !profiler_mod.enabled) return;
 
-    const cpu_freq_f: f64 = @floatFromInt(self.cpu_freq);
+    const timer_freq_f: f64 = @floatFromInt(self.timer_freq);
 
     var indent_buf: [profiler_mod.max_depth * 4]u8 = @splat(' ');
 
@@ -308,13 +308,13 @@ fn logChildren(self: *const Tester, child_idx: ?u32, depth: usize) void {
 
         const seen_f: f64 = @floatFromInt(agg.run_count);
 
-        const excl_min_ms = 1000.0 * @as(f64, @floatFromInt(agg.exclusive_min)) / cpu_freq_f;
-        const excl_max_ms = 1000.0 * @as(f64, @floatFromInt(agg.exclusive_max)) / cpu_freq_f;
-        const excl_avg_ms = 1000.0 * (@as(f64, @floatFromInt(agg.exclusive_sum)) / seen_f) / cpu_freq_f;
+        const excl_min_ms = 1000.0 * @as(f64, @floatFromInt(agg.exclusive_min)) / timer_freq_f;
+        const excl_max_ms = 1000.0 * @as(f64, @floatFromInt(agg.exclusive_max)) / timer_freq_f;
+        const excl_avg_ms = 1000.0 * (@as(f64, @floatFromInt(agg.exclusive_sum)) / seen_f) / timer_freq_f;
 
-        const incl_min_ms = 1000.0 * @as(f64, @floatFromInt(agg.inclusive_min)) / cpu_freq_f;
-        const incl_max_ms = 1000.0 * @as(f64, @floatFromInt(agg.inclusive_max)) / cpu_freq_f;
-        const incl_avg_ms = 1000.0 * (@as(f64, @floatFromInt(agg.inclusive_sum)) / seen_f) / cpu_freq_f;
+        const incl_min_ms = 1000.0 * @as(f64, @floatFromInt(agg.inclusive_min)) / timer_freq_f;
+        const incl_max_ms = 1000.0 * @as(f64, @floatFromInt(agg.inclusive_max)) / timer_freq_f;
+        const incl_avg_ms = 1000.0 * (@as(f64, @floatFromInt(agg.inclusive_sum)) / seen_f) / timer_freq_f;
 
         std.log.info(
             "{s}{s} | seen {d}/{d} | {s}:{d} \n{s}      |excl min/avg/max {d:.4}/{d:.4}/{d:.4}ms\n{s}      |incl min/avg/max {d:.4}/{d:.4}/{d:.4}ms ",

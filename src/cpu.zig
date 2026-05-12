@@ -19,7 +19,7 @@ pub fn readOsTimer() u64 {
     return OsFreq * @as(u64, @bitCast(value.tv_sec)) + @as(u32, @bitCast(value.tv_usec));
 }
 
-pub fn readCpuFreq() u64 {
+pub fn readTimerFreq() u64 {
     var val: u64 = undefined;
 
     asm volatile ("mrs %[val], cntfrq_el0"
@@ -39,7 +39,7 @@ pub fn readCpuTimer() u64 {
     return val;
 }
 
-pub fn guessCpuFreq(milliseconds_to_wait: u64) f64 {
+pub fn guessTimerFreq(milliseconds_to_wait: u64) f64 {
     const os_freq = OsFreq;
 
     const cpu_start: u64 = readCpuTimer();
@@ -55,18 +55,18 @@ pub fn guessCpuFreq(milliseconds_to_wait: u64) f64 {
 
     const cpu_end: u64 = readCpuTimer();
     const cpu_elapsed: u64 = cpu_end - cpu_start;
-    var cpu_freq: u64 = 0;
+    var timer_freq: u64 = 0;
     if (os_elapsed != 0) {
-        cpu_freq = os_freq * cpu_elapsed / os_elapsed;
+        timer_freq = os_freq * cpu_elapsed / os_elapsed;
     }
 
-    return @floatFromInt(cpu_freq);
+    return @floatFromInt(timer_freq);
 }
 
-test "guess cpu freq" {
-    _ = guessCpuFreq(1000);
-    _ = guessCpuFreq(100);
-    _ = guessCpuFreq(10);
+test "guess timer freq" {
+    _ = guessTimerFreq(1000);
+    _ = guessTimerFreq(100);
+    _ = guessTimerFreq(10);
 }
 
 test "os timer" {
@@ -81,7 +81,7 @@ test "os timer" {
 }
 
 test "cpu timer" {
-    const CpuFreq = readCpuFreq();
+    const CpuFreq = readTimerFreq();
 
     const CPUStart: u64 = readCpuTimer();
     const OSStart = readOsTimer();
