@@ -8,7 +8,7 @@ const GlobalProfiler = &@import("global.zig").GlobalProfiler;
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
 
-    GlobalProfiler.init();
+    GlobalProfiler.init("GLOBAL PROFILER");
     defer {
         GlobalProfiler.deinit();
         GlobalProfiler.log();

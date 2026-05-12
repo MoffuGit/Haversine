@@ -71,7 +71,7 @@ const NoopProfiler = struct {
 
     pub const empty: NoopProfiler = .{};
 
-    pub fn init(self: *NoopProfiler) void {
+    pub fn init(self: *NoopProfiler, _: []const u8) void {
         self.start = cpu.readCpuTimer();
     }
 
@@ -132,9 +132,11 @@ const ProfilerImpl = struct {
     anchor_count: usize,
     start: u64,
     end: u64,
+    label: []const u8,
 
-    pub fn init(self: *ProfilerImpl) void {
+    pub fn init(self: *ProfilerImpl, label: []const u8) void {
         self.start = cpu.readCpuTimer();
+        self.label = label;
     }
 
     pub fn deinit(self: *ProfilerImpl) void {
@@ -166,9 +168,13 @@ const ProfilerImpl = struct {
 
         printHeader(width);
         print("│{s}│\n", .{final[0..sys_info.len]});
-        printFooter(width);
+        printDivider(width);
 
-        print("Total time: {d:.4}ms\n", .{total_ms});
+        var profiler: [256]u8 = @splat(' ');
+        const data = std.fmt.bufPrint(&profiler, " {s} | {d:.4}ms", .{ self.label, total_ms }) catch &.{};
+
+        print("│{s}│\n", .{data[0 .. width - 2]});
+        printFooter(width);
 
         var indent_buf: [max_depth * 2]u8 = @splat(' ');
 
@@ -274,6 +280,15 @@ fn printFooter(length: u64) void {
     print("┘\n", .{});
 }
 
+fn printDivider(length: u64) void {
+    print("├", .{});
+    var i: usize = 0;
+    while (i < length - 2) : (i += 1) {
+        print("─", .{});
+    }
+    print("┤\n", .{});
+}
+
 fn printHeader(length: usize) void {
     if (length < 2) return;
 
@@ -290,6 +305,22 @@ fn printHeader(length: usize) void {
         print("┴", .{});
     }
     print("┤\n", .{});
+}
+
+fn printCentered(text: []const u8, width: usize) void {
+    if (width < 2) return;
+    const inner = width - 2;
+    const pad: usize = if (text.len < inner) inner - text.len else 0;
+    const left = pad / 2;
+    const right = pad - left;
+
+    print("│", .{});
+    var i: usize = 0;
+    while (i < left) : (i += 1) print(" ", .{});
+    print("{s}", .{text});
+    i = 0;
+    while (i < right) : (i += 1) print(" ", .{});
+    print("│\n", .{});
 }
 
 pub fn sameSrc(a: builtin.SourceLocation, b: builtin.SourceLocation) bool {
