@@ -151,27 +151,28 @@ const ProfilerImpl = struct {
         var buffer: [256]u8 = undefined;
         const cpu_count = std.Thread.getCpuCount() catch 0;
 
-        const sys_info = std.fmt.bufPrint(&buffer, " OS: {s} | ARCH: {s} | CPU: {s} ({d} cores) | Timer freq: {d} ", .{
+        const sys_info = std.fmt.bufPrint(&buffer, " OS: {s} | ARCH: {s} | CPU: {s} ({d} cores) ", .{
             @tagName(target.os.tag),
             @tagName(target.cpu.arch),
             target.cpu.model.name,
             cpu_count,
-            timer_freq,
         }) catch &.{};
 
         var upper: [256]u8 = undefined;
         const final = std.ascii.upperString(&upper, &buffer);
 
-        // sys_info is all ASCII, so byte length equals visible width.
-        // +2 accounts for the surrounding │ │ borders.
-        const width = sys_info.len + 2;
+        var profiler: [256]u8 = @splat(' ');
+        const data = std.fmt.bufPrint(&profiler, " {s} | {d:.4}ms | Timer freq: {d}", .{
+            self.label, total_ms,
+            timer_freq,
+        }) catch &.{};
 
+        const width = @max(sys_info.len, data.len) + 2;
+
+        print("\n", .{});
         printHeader(width);
         print("│{s}│\n", .{final[0..sys_info.len]});
         printDivider(width);
-
-        var profiler: [256]u8 = @splat(' ');
-        const data = std.fmt.bufPrint(&profiler, " {s} | {d:.4}ms", .{ self.label, total_ms }) catch &.{};
 
         print("│{s}│\n", .{data[0 .. width - 2]});
         printFooter(width);
