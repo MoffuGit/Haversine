@@ -171,11 +171,14 @@ const ProfilerImpl = struct {
 
         print("\n", .{});
         printHeader(width);
-        print("│{s}│\n", .{final[0..sys_info.len]});
+        print("│{s}│\n", .{final[0 .. width - 2]});
         printDivider(width);
 
         print("│{s}│\n", .{data[0 .. width - 2]});
         printFooter(width);
+
+        var divider: [256]u8 = @splat('/');
+        print("{s}\n\n", .{divider[0..width]});
 
         var indent_buf: [max_depth * 2]u8 = @splat(' ');
 
@@ -195,32 +198,30 @@ const ProfilerImpl = struct {
                 const inclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.inclusive.elapsed)) / @as(f64, @floatFromInt(timer_freq));
 
                 print(
-                    "{s} {s} |{d:.4}ms, {d:.2}%| w/children |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}\n",
+                    "{s} {s}:{d} - {d:.4}ms, {d:.2}% - w/children - {d:.4}ms, {d:.2}% | {s}:{d} |\n",
                     .{
                         indent,
                         anchor.label,
+                        anchor.hits,
                         exclusive_ms,
                         exclusive_pct,
                         inclusive_ms,
                         inclusive_pct,
-                        anchor.hits,
                         anchor.src.file,
                         anchor.src.line,
-                        anchor.src.fn_name,
                     },
                 );
             } else {
                 print(
-                    "{s} {s} |{d:.4}ms, {d:.2}%| h:{d} |{s}:{d}| fn:{s}\n",
+                    "{s} {s}:{d} - {d:.4}ms, {d:.2}% | {s}:{d} |\n",
                     .{
                         indent,
                         anchor.label,
+                        anchor.hits,
                         exclusive_ms,
                         exclusive_pct,
-                        anchor.hits,
                         anchor.src.file,
                         anchor.src.line,
-                        anchor.src.fn_name,
                     },
                 );
             }
@@ -232,14 +233,14 @@ const ProfilerImpl = struct {
                 const gbps = gb / seconds;
 
                 print(
-                    "{s}  → Memory |{d:.4}gb at {d:.4}gb/s|\n",
+                    "{s} → Memory |{d:.4}gb at {d:.4}gb/s|\n",
                     .{ indent, gb, gbps },
                 );
             }
             if (anchor.inclusive.ru_majflt > 0 or anchor.inclusive.ru_minflt > 0) {
                 if (has_children) {
                     print(
-                        "{s}  → Page Faults |min: {}, maj: {}| w/children |min: {}, maj: {}|\n",
+                        "{s} → Page Faults |min: {}, maj: {}| w/children |min: {}, maj: {}|\n",
                         .{
                             indent,
                             anchor.exclusive.ru_minflt,
@@ -250,11 +251,13 @@ const ProfilerImpl = struct {
                     );
                 } else {
                     print(
-                        "{s}  → Page Faults |min: {}, maj: {}|\n",
+                        "{s} → Page Faults |min: {}, maj: {}|\n",
                         .{ indent, anchor.exclusive.ru_minflt, anchor.exclusive.ru_majflt },
                     );
                 }
             }
+
+            if (!has_children) print("\n", .{});
         }
     }
 
