@@ -4,6 +4,7 @@ const target = @import("builtin");
 const cpu = @import("cpu.zig");
 const posix = std.posix;
 const print = std.debug.print;
+const printpkg = @import("print.zig");
 
 pub const enabled = @import("build_options").profiler;
 
@@ -95,7 +96,7 @@ const NoopProfiler = struct {
             timer_freq,
         }) catch &.{};
 
-        printHeader(sys_info.len);
+        printpkg.printHeader(sys_info.len);
         print("{s}", .{sys_info});
         print("Total time: {d:.4}ms\n", .{total_ms});
     }
@@ -123,6 +124,7 @@ const ProfilerImpl = struct {
         .anchor_count = 0,
         .start = 0,
         .end = 0,
+        .label = "",
     };
 
     anchors: [max_anchors]Anchor,
@@ -148,7 +150,7 @@ const ProfilerImpl = struct {
         const total_elapsed = self.end - self.start;
         const total_ms = 1000.0 * @as(f64, @floatFromInt(total_elapsed)) / @as(f64, @floatFromInt(timer_freq));
 
-        var buffer: [256]u8 = undefined;
+        var buffer: [256]u8 = @splat(' ');
         const cpu_count = std.Thread.getCpuCount() catch 0;
 
         const sys_info = std.fmt.bufPrint(&buffer, " OS: {s} | ARCH: {s} | CPU: {s} ({d} cores) ", .{
@@ -158,11 +160,11 @@ const ProfilerImpl = struct {
             cpu_count,
         }) catch &.{};
 
-        var upper: [256]u8 = undefined;
-        const final = std.ascii.upperString(&upper, &buffer);
+        var upper: [256]u8 = @splat(' ');
+        _ = std.ascii.upperString(&upper, &buffer);
 
         var profiler: [256]u8 = @splat(' ');
-        const data = std.fmt.bufPrint(&profiler, " {s} | {d:.4}ms | Timer freq: {d}", .{
+        const data = std.fmt.bufPrint(&profiler, " {s} | {d:.4}ms | Timer freq: {d} ", .{
             self.label, total_ms,
             timer_freq,
         }) catch &.{};
@@ -170,12 +172,12 @@ const ProfilerImpl = struct {
         const width = @max(sys_info.len, data.len) + 2;
 
         print("\n", .{});
-        printHeader(width);
-        print("│{s}│\n", .{final[0 .. width - 2]});
-        printDivider(width);
+        printpkg.printHeader(width);
+        print("│{s}│\n", .{upper[0 .. width - 2]});
+        printpkg.printDivider(width);
 
-        print("│{s}│\n", .{data[0 .. width - 2]});
-        printFooter(width);
+        print("│{s}│\n", .{profiler[0 .. width - 2]});
+        printpkg.printFooter(width);
 
         var divider: [256]u8 = @splat('/');
         print("{s}\n\n", .{divider[0..width]});
@@ -274,58 +276,6 @@ const ProfilerImpl = struct {
         return if (self.depth == 0) &self.root_first_child else &self.stack[self.depth - 1].first_child;
     }
 };
-
-fn printFooter(length: u64) void {
-    print("└", .{});
-    var i: usize = 0;
-    while (i < length - 2) : (i += 1) {
-        print("─", .{});
-    }
-    print("┘\n", .{});
-}
-
-fn printDivider(length: u64) void {
-    print("├", .{});
-    var i: usize = 0;
-    while (i < length - 2) : (i += 1) {
-        print("─", .{});
-    }
-    print("┤\n", .{});
-}
-
-fn printHeader(length: usize) void {
-    if (length < 2) return;
-
-    print("┌", .{});
-    var i: usize = 0;
-    while (i < length - 2) : (i += 1) {
-        print("┬", .{});
-    }
-    print("┐\n", .{});
-
-    print("├", .{});
-    i = 0;
-    while (i < length - 2) : (i += 1) {
-        print("┴", .{});
-    }
-    print("┤\n", .{});
-}
-
-fn printCentered(text: []const u8, width: usize) void {
-    if (width < 2) return;
-    const inner = width - 2;
-    const pad: usize = if (text.len < inner) inner - text.len else 0;
-    const left = pad / 2;
-    const right = pad - left;
-
-    print("│", .{});
-    var i: usize = 0;
-    while (i < left) : (i += 1) print(" ", .{});
-    print("{s}", .{text});
-    i = 0;
-    while (i < right) : (i += 1) print(" ", .{});
-    print("│\n", .{});
-}
 
 pub fn sameSrc(a: builtin.SourceLocation, b: builtin.SourceLocation) bool {
     return a.line == b.line and

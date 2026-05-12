@@ -1,14 +1,18 @@
 const std = @import("std");
-const builtin = std.builtin;
 const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
+const builtin = std.builtin;
+const target = @import("builtin");
+const printpkg = @import("print.zig");
+const print = std.debug.print;
 
 const cpu = @import("cpu.zig");
-const profiler_mod = @import("profiler.zig");
-const Profiler = profiler_mod.Profiler;
-const Anchor = profiler_mod.Anchor;
+const profilerpkg = @import("profiler.zig");
+const Profiler = profilerpkg.Profiler;
+const Anchor = profilerpkg.Anchor;
 
 const Tester = @This();
+
+const max_default = 1024;
 
 pub const Config = struct {
     /// Minimum number of iterations before the stale-min stop criterion is checked.
@@ -16,387 +20,146 @@ pub const Config = struct {
     /// Optional hard cap on the number of iterations.
     max_runs: ?u64 = null,
     /// Stop once no new total-elapsed minimum has been observed for this many milliseconds.
-    stop_after_no_new_min_ms: u64 = 2_000,
+    stop_after_no_new_min_ms: f64 = 2_000.0,
 };
 
-pub const TotalStats = struct {
-    min: u64 = std.math.maxInt(u64),
-    max: u64 = 0,
-    sum: u128 = 0,
-};
+const Run = struct { profiler: Profiler = .empty, fail: bool = false };
 
-pub const AggAnchor = struct {
-    parent: ?u32,
-    first_child: ?u32,
-    next_sibling: ?u32,
-
-    src: builtin.SourceLocation,
-    label: []const u8,
-
-    /// Number of runs in which this anchor appeared (hits > 0).
-    run_count: u64,
-
-    hits_per_run_min: u64,
-    hits_per_run_max: u64,
-    hits_per_run_sum: u128,
-
-    exclusive_min: u64,
-    exclusive_max: u64,
-    exclusive_sum: u128,
-
-    inclusive_min: u64,
-    inclusive_max: u64,
-    inclusive_sum: u128,
-
-    bytes_min: u64,
-    bytes_max: u64,
-    bytes_sum: u128,
-
-    gbps_min: f64,
-    gbps_max: f64,
-    gbps_seen: bool,
-
-    pub const empty: AggAnchor = .{
-        .parent = null,
-        .first_child = null,
-        .next_sibling = null,
-        .src = undefined,
-        .label = "",
-        .run_count = 0,
-
-        .hits_per_run_min = std.math.maxInt(u64),
-        .hits_per_run_max = 0,
-        .hits_per_run_sum = 0,
-
-        .exclusive_min = std.math.maxInt(u64),
-        .exclusive_max = 0,
-        .exclusive_sum = 0,
-
-        .inclusive_min = std.math.maxInt(u64),
-        .inclusive_max = 0,
-        .inclusive_sum = 0,
-
-        .bytes_min = std.math.maxInt(u64),
-        .bytes_max = 0,
-        .bytes_sum = 0,
-
-        .gbps_min = std.math.inf(f64),
-        .gbps_max = 0.0,
-        .gbps_seen = false,
-    };
-};
-
-alloc: Allocator,
+label: []const u8,
 config: Config,
-timer_freq: u64,
 
-profiler: Profiler,
+offset: u64,
+runs: []Run,
 
-anchors: ArrayList(AggAnchor),
-root_first_child: ?u32,
+start: u64,
+end: u64,
 
-run_count: u64,
-total: TotalStats,
-
-best_total_elapsed: u64,
-last_min_tick: u64,
+min: u64,
+min_tick: u64,
+min_offset: usize,
 
 pub const empty: Tester = .{
-    .alloc = undefined,
+    .label = "",
     .config = .{},
-    .timer_freq = 0,
-    .profiler = .empty,
-    .anchors = .empty,
-    .root_first_child = null,
-    .run_count = 0,
-    .total = .{},
-    .best_total_elapsed = std.math.maxInt(u64),
-    .last_min_tick = 0,
+    .offset = 0,
+    .start = 0,
+    .end = 0,
+    .runs = &.{},
+    .min = std.math.maxInt(u64),
+    .min_tick = 0,
+    .min_offset = 0,
 };
 
-pub fn init(self: *Tester, alloc: Allocator, config: Config) void {
-    self.* = .{
-        .alloc = alloc,
-        .config = config,
-        .timer_freq = cpu.readTimerFreq(),
-        .profiler = .empty,
-        .anchors = .empty,
-        .root_first_child = null,
-        .run_count = 0,
-        .total = .{},
-        .best_total_elapsed = std.math.maxInt(u64),
-        .last_min_tick = 0,
-    };
+pub fn init(self: *Tester, alloc: Allocator, label: []const u8, config: Config) !void {
+    const capacity = config.max_runs orelse max_default;
+    self.runs = try alloc.alloc(Run, capacity);
+    @memset(self.runs, .{});
+    self.label = label;
+    self.config = config;
+    self.start = cpu.readCpuTimer();
 }
 
-pub fn deinit(self: *Tester) void {
-    self.anchors.deinit(self.alloc);
+pub fn deinit(self: *Tester, alloc: Allocator) void {
+    self.end = cpu.readCpuTimer();
+    alloc.free(self.runs);
+    self.runs = &.{};
 }
 
-/// Repeatedly invoke `callback(ctx, &tester.profiler)` until the stop criterion is met.
-/// Each iteration starts with a fresh profiler. Per-anchor stats are folded into the
-/// tester's aggregated tree.
 pub fn run(
     self: *Tester,
     comptime Context: type,
     ctx: *Context,
     callback: *const fn (ctx: *Context, profiler: *Profiler) anyerror!void,
 ) !void {
-    const stale_ticks = (self.config.stop_after_no_new_min_ms * self.timer_freq) / 1000;
-    self.last_min_tick = cpu.readCpuTimer();
+    self.min_tick = cpu.readCpuTimer();
+    const timer_freq = cpu.readTimerFreq();
+    while (self.offset < self.runs.len) : (self.offset += 1) {
+        const r = &self.runs[self.offset];
+        const profiler = &r.profiler;
+        {
+            profiler.init("TEST PROFILER");
+            defer profiler.deinit();
 
-    while (true) {
-        self.profiler = .empty;
-        self.profiler.init();
+            callback(ctx, profiler) catch {
+                r.fail = true;
+            };
+        }
+        const total = profiler.end - profiler.start;
 
-        const cb_result = callback(ctx, &self.profiler);
-        self.profiler.deinit();
-        try cb_result;
-
-        try self.register(&self.profiler);
-
-        const total_elapsed = self.profiler.end - self.profiler.start;
-        if (total_elapsed < self.best_total_elapsed) {
-            self.best_total_elapsed = total_elapsed;
-            self.last_min_tick = self.profiler.end;
+        if (total < self.min) {
+            self.min = total;
+            self.min_offset = self.offset;
+            self.min_tick = profiler.end;
         }
 
-        if (self.run_count < self.config.min_runs) continue;
-        if (self.config.max_runs) |max_runs| {
-            if (self.run_count >= max_runs) break;
-        }
-        if (self.profiler.end - self.last_min_tick >= stale_ticks) break;
+        if (self.offset < self.config.min_runs) continue;
+
+        const total_ms = 1000.0 * @as(f64, @floatFromInt(total)) / @as(f64, @floatFromInt(timer_freq));
+
+        if (total_ms >= self.config.stop_after_no_new_min_ms) break;
     }
-}
-
-fn pushU64(min: *u64, max: *u64, sum: *u128, value: u64) void {
-    if (value < min.*) min.* = value;
-    if (value > max.*) max.* = value;
-    sum.* += value;
-}
-
-fn register(self: *Tester, run_profiler: *const Profiler) !void {
-    const total_elapsed = run_profiler.end - run_profiler.start;
-    pushU64(&self.total.min, &self.total.max, &self.total.sum, total_elapsed);
-    self.run_count += 1;
-
-    if (comptime !profiler_mod.enabled) return;
-
-    try self.registerChildren(run_profiler, null, run_profiler.root_first_child);
-}
-
-fn registerChildren(
-    self: *Tester,
-    run_profiler: *const Profiler,
-    parent_agg_idx: ?u32,
-    run_child_idx: ?u32,
-) !void {
-    if (comptime !profiler_mod.enabled) return;
-
-    var cur = run_child_idx;
-    while (cur) |run_idx| : (cur = run_profiler.anchors[run_idx].next_sibling) {
-        const run_anchor = &run_profiler.anchors[run_idx];
-        if (run_anchor.hits == 0) continue;
-
-        const agg_idx = try self.findOrCreateAggAnchor(parent_agg_idx, run_anchor);
-        const agg = &self.anchors.items[agg_idx];
-
-        agg.run_count += 1;
-        pushU64(&agg.hits_per_run_min, &agg.hits_per_run_max, &agg.hits_per_run_sum, run_anchor.hits);
-        pushU64(&agg.exclusive_min, &agg.exclusive_max, &agg.exclusive_sum, run_anchor.exclusive.elapsed);
-        pushU64(&agg.inclusive_min, &agg.inclusive_max, &agg.inclusive_sum, run_anchor.inclusive.elapsed);
-        pushU64(&agg.bytes_min, &agg.bytes_max, &agg.bytes_sum, run_anchor.inclusive.bytes);
-
-        if (run_anchor.inclusive.bytes > 0 and run_anchor.inclusive.elapsed > 0) {
-            const gigabyte: f64 = 1024.0 * 1024.0 * 1024.0;
-            const gb = @as(f64, @floatFromInt(run_anchor.inclusive.bytes)) / gigabyte;
-            const seconds = @as(f64, @floatFromInt(run_anchor.inclusive.elapsed)) / @as(f64, @floatFromInt(self.timer_freq));
-            const gbps = gb / seconds;
-
-            if (!agg.gbps_seen) {
-                agg.gbps_min = gbps;
-                agg.gbps_max = gbps;
-                agg.gbps_seen = true;
-            } else {
-                if (gbps < agg.gbps_min) agg.gbps_min = gbps;
-                if (gbps > agg.gbps_max) agg.gbps_max = gbps;
-            }
-        }
-
-        try self.registerChildren(run_profiler, agg_idx, run_anchor.first_child);
-    }
-}
-
-fn findOrCreateAggAnchor(
-    self: *Tester,
-    parent_agg_idx: ?u32,
-    run_anchor: *const Anchor,
-) !u32 {
-    const first_child_slot = if (parent_agg_idx) |p|
-        &self.anchors.items[p].first_child
-    else
-        &self.root_first_child;
-
-    var cur = first_child_slot.*;
-    while (cur) |agg_idx| : (cur = self.anchors.items[agg_idx].next_sibling) {
-        const agg = &self.anchors.items[agg_idx];
-        if (profiler_mod.sameSrc(agg.src, run_anchor.src)) {
-            std.debug.assert(std.mem.eql(u8, agg.label, run_anchor.label));
-            return agg_idx;
-        }
-    }
-
-    const new_idx: u32 = @intCast(self.anchors.items.len);
-    var entry: AggAnchor = .empty;
-    entry.parent = parent_agg_idx;
-    entry.src = run_anchor.src;
-    entry.label = run_anchor.label;
-    try self.anchors.append(self.alloc, entry);
-
-    // Append to tail so log order matches "first seen" order.
-    if (first_child_slot.* == null) {
-        first_child_slot.* = new_idx;
-    } else {
-        var tail = first_child_slot.*.?;
-        while (self.anchors.items[tail].next_sibling) |next| {
-            tail = next;
-        }
-        self.anchors.items[tail].next_sibling = new_idx;
-    }
-
-    return new_idx;
 }
 
 pub fn log(self: *const Tester) void {
-    if (self.run_count == 0) {
-        std.log.info("Tester | no runs recorded", .{});
-        return;
-    }
+    const timer_freq = cpu.readTimerFreq();
 
-    const timer_freq_f: f64 = @floatFromInt(self.timer_freq);
-    const runs_f: f64 = @floatFromInt(self.run_count);
+    const completed: u64 = if (self.offset < self.runs.len) self.offset + 1 else self.offset;
 
-    const total_min_ms = 1000.0 * @as(f64, @floatFromInt(self.total.min)) / timer_freq_f;
-    const total_max_ms = 1000.0 * @as(f64, @floatFromInt(self.total.max)) / timer_freq_f;
-    const total_avg_ms = 1000.0 * (@as(f64, @floatFromInt(self.total.sum)) / runs_f) / timer_freq_f;
+    var min_total: u64 = std.math.maxInt(u64);
+    var max_total: u64 = 0;
+    var sum_total: u128 = 0;
+    var fails: u64 = 0;
+    var ok_runs: u64 = 0;
 
-    std.log.info(
-        "runs:{d} | min:{d:.4}ms avg:{d:.4}ms max:{d:.4}ms (Timer freq {d})",
-        .{ self.run_count, total_min_ms, total_avg_ms, total_max_ms, self.timer_freq },
-    );
-
-    if (comptime !profiler_mod.enabled) {
-        std.log.info("  Profiler disabled; per-anchor stats unavailable.", .{});
-        return;
-    }
-
-    self.logChildren(self.root_first_child, 0);
-}
-
-fn logChildren(self: *const Tester, child_idx: ?u32, depth: usize) void {
-    if (comptime !profiler_mod.enabled) return;
-
-    const timer_freq_f: f64 = @floatFromInt(self.timer_freq);
-
-    var indent_buf: [profiler_mod.max_depth * 4]u8 = @splat(' ');
-
-    var cur = child_idx;
-    while (cur) |idx| : (cur = self.anchors.items[idx].next_sibling) {
-        const agg = &self.anchors.items[idx];
-        const indent_len = depth * 4;
-        const indent = indent_buf[0..indent_len];
-
-        const seen_f: f64 = @floatFromInt(agg.run_count);
-
-        const excl_min_ms = 1000.0 * @as(f64, @floatFromInt(agg.exclusive_min)) / timer_freq_f;
-        const excl_max_ms = 1000.0 * @as(f64, @floatFromInt(agg.exclusive_max)) / timer_freq_f;
-        const excl_avg_ms = 1000.0 * (@as(f64, @floatFromInt(agg.exclusive_sum)) / seen_f) / timer_freq_f;
-
-        const incl_min_ms = 1000.0 * @as(f64, @floatFromInt(agg.inclusive_min)) / timer_freq_f;
-        const incl_max_ms = 1000.0 * @as(f64, @floatFromInt(agg.inclusive_max)) / timer_freq_f;
-        const incl_avg_ms = 1000.0 * (@as(f64, @floatFromInt(agg.inclusive_sum)) / seen_f) / timer_freq_f;
-
-        std.log.info(
-            "{s}{s} | seen {d}/{d} | {s}:{d} \n{s}      |excl min/avg/max {d:.4}/{d:.4}/{d:.4}ms\n{s}      |incl min/avg/max {d:.4}/{d:.4}/{d:.4}ms ",
-            .{
-                indent,
-                agg.label,
-                agg.run_count,
-                self.run_count,
-                agg.src.file,
-                agg.src.line,
-                indent,
-                excl_min_ms,
-                excl_avg_ms,
-                excl_max_ms,
-                indent,
-                incl_min_ms,
-                incl_avg_ms,
-                incl_max_ms,
-            },
-        );
-
-        if (agg.gbps_seen) {
-            const gigabyte: f64 = 1024.0 * 1024.0 * 1024.0;
-            const gb_min = @as(f64, @floatFromInt(agg.bytes_min)) / gigabyte;
-            const gb_max = @as(f64, @floatFromInt(agg.bytes_max)) / gigabyte;
-            std.log.info(
-                "{s}→ bytes min/max {d:.4}/{d:.4}gb | GB/s min/max {d:.4}/{d:.4}",
-                .{ indent, gb_min, gb_max, agg.gbps_min, agg.gbps_max },
-            );
+    var i: u64 = 0;
+    while (i < completed) : (i += 1) {
+        const r = &self.runs[i];
+        if (r.fail) {
+            fails += 1;
+            continue;
         }
-
-        self.logChildren(agg.first_child, depth + 1);
+        const total = r.profiler.end - r.profiler.start;
+        if (total < min_total) min_total = total;
+        if (total > max_total) max_total = total;
+        sum_total += total;
+        ok_runs += 1;
     }
-}
 
-// ---------- tests ----------
+    const freq_f = @as(f64, @floatFromInt(timer_freq));
+    const min_ms: f64 = if (ok_runs == 0) 0 else 1000.0 * @as(f64, @floatFromInt(min_total)) / freq_f;
+    const max_ms: f64 = if (ok_runs == 0) 0 else 1000.0 * @as(f64, @floatFromInt(max_total)) / freq_f;
+    const avg_ms: f64 = if (ok_runs == 0) 0 else 1000.0 * (@as(f64, @floatFromInt(sum_total)) / @as(f64, @floatFromInt(ok_runs))) / freq_f;
 
-test "Tester aggregates nested zones across runs" {
-    if (comptime !profiler_mod.enabled) return error.SkipZigTest;
+    var sys_buf: [256]u8 = @splat(' ');
+    const cpu_count = std.Thread.getCpuCount() catch 0;
+    const sys_info = std.fmt.bufPrint(&sys_buf, " OS: {s} | Arch: {s} | CPU: {s} ({d} cores) ", .{
+        @tagName(target.os.tag),
+        @tagName(target.cpu.arch),
+        target.cpu.model.name,
+        cpu_count,
+    }) catch &.{};
 
-    const Zone = profiler_mod.Zone;
+    var label_buf: [256]u8 = @splat(' ');
+    const label_info = std.fmt.bufPrint(&label_buf, " {s} | runs: {d} | fails: {d} | Timer freq: {d} ", .{
+        self.label,
+        completed,
+        fails,
+        timer_freq,
+    }) catch &.{};
 
-    const Ctx = struct {
-        bumps: u32 = 0,
+    var stats_buf: [256]u8 = @splat(' ');
+    const stats_info = std.fmt.bufPrint(&stats_buf, " min: {d:.4}ms | max: {d:.4}ms | avg: {d:.4}ms ", .{
+        min_ms, max_ms, avg_ms,
+    }) catch &.{};
 
-        fn cb(self: *@This(), p: *Profiler) anyerror!void {
-            var outer: Zone = .empty;
-            outer.init(@src(), p, .{ .label = "outer" });
-            defer outer.deinit(p);
+    const width = @max(@max(sys_info.len, label_info.len), stats_info.len) + 2;
 
-            var inner: Zone = .empty;
-            inner.init(@src(), p, .{ .label = "inner", .bytes = 64 });
-            defer inner.deinit(p);
-
-            self.bumps += 1;
-        }
-    };
-
-    var ctx: Ctx = .{};
-
-    var tester: Tester = .empty;
-    tester.init(std.testing.allocator, .{
-        .min_runs = 3,
-        .max_runs = 3,
-        .stop_after_no_new_min_ms = 1,
-    });
-    defer tester.deinit();
-
-    try tester.run(Ctx, &ctx, Ctx.cb);
-
-    try std.testing.expectEqual(@as(u64, 3), tester.run_count);
-    try std.testing.expectEqual(@as(u32, 3), ctx.bumps);
-    try std.testing.expectEqual(@as(usize, 2), tester.anchors.items.len);
-
-    const outer_idx = tester.root_first_child orelse return error.TestExpected;
-    const outer = tester.anchors.items[outer_idx];
-    try std.testing.expectEqualStrings("outer", outer.label);
-    try std.testing.expectEqual(@as(u64, 3), outer.run_count);
-
-    const inner_idx = outer.first_child orelse return error.TestExpected;
-    const inner = tester.anchors.items[inner_idx];
-    try std.testing.expectEqualStrings("inner", inner.label);
-    try std.testing.expectEqual(@as(u64, 3), inner.run_count);
-    try std.testing.expect(inner.gbps_seen);
+    print("\n", .{});
+    printpkg.printHeader(width);
+    print("│{s}│\n", .{sys_buf[0 .. width - 2]});
+    printpkg.printDivider(width);
+    print("│{s}│\n", .{label_buf[0 .. width - 2]});
+    printpkg.printDivider(width);
+    print("│{s}│\n", .{stats_buf[0 .. width - 2]});
+    printpkg.printFooter(width);
 }
