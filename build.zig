@@ -62,8 +62,32 @@ pub fn build(b: *std.Build) void {
         prop_cmd.addArgs(args);
     }
 
+    const reader_bench_module = b.createModule(.{
+        .root_source_file = b.path("src/reader_bench.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    reader_bench_module.addImport("build_options", build_options_module);
+
+    const reader_bench = b.addExecutable(.{
+        .name = "ReaderBench",
+        .root_module = reader_bench_module,
+    });
+
+    const install_reader_bench = b.addInstallArtifact(reader_bench, .{});
+
+    const reader_bench_step = b.step("bench-reader", "Run the reader benchmark");
+    const reader_bench_cmd = b.addRunArtifact(reader_bench);
+    reader_bench_cmd.step.dependOn(&install_reader_bench.step);
+    reader_bench_step.dependOn(&reader_bench_cmd.step);
+
+    if (b.args) |args| {
+        reader_bench_cmd.addArgs(args);
+    }
+
     b.getInstallStep().dependOn(&install_generator.step);
     b.getInstallStep().dependOn(&install_processor.step);
+    b.getInstallStep().dependOn(&install_reader_bench.step);
 
     const tests_module = b.createModule(.{
         .root_source_file = b.path("src/tests.zig"),

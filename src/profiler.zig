@@ -187,7 +187,7 @@ const ProfilerImpl = struct {
     }
 };
 
-fn sameSrc(a: builtin.SourceLocation, b: builtin.SourceLocation) bool {
+pub fn sameSrc(a: builtin.SourceLocation, b: builtin.SourceLocation) bool {
     return a.line == b.line and
         a.column == b.column and
         std.mem.eql(u8, a.file, b.file) and
