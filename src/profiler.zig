@@ -84,8 +84,19 @@ const NoopProfiler = struct {
         const total_elapsed = self.end - self.start;
         const total_ms = 1000.0 * @as(f64, @floatFromInt(total_elapsed)) / @as(f64, @floatFromInt(timer_freq));
 
-        printHeader(80);
-        logSystemInfo(timer_freq);
+        var buffer: [256]u8 = undefined;
+        const cpu_count = std.Thread.getCpuCount() catch 0;
+
+        const sys_info = std.fmt.bufPrint(&buffer, "OS: {s} | Arch: {s} | CPU: {s} ({d} cores) | Timer freq: {d}\n", .{
+            @tagName(target.os.tag),
+            @tagName(target.cpu.arch),
+            target.cpu.model.name,
+            cpu_count,
+            timer_freq,
+        }) catch &.{};
+
+        printHeader(sys_info.len);
+        print("{s}", .{sys_info});
         print("Total time: {d:.4}ms\n", .{total_ms});
     }
 };
@@ -135,8 +146,28 @@ const ProfilerImpl = struct {
         const total_elapsed = self.end - self.start;
         const total_ms = 1000.0 * @as(f64, @floatFromInt(total_elapsed)) / @as(f64, @floatFromInt(timer_freq));
 
-        printHeader(80);
-        logSystemInfo(timer_freq);
+        var buffer: [256]u8 = undefined;
+        const cpu_count = std.Thread.getCpuCount() catch 0;
+
+        const sys_info = std.fmt.bufPrint(&buffer, " OS: {s} | ARCH: {s} | CPU: {s} ({d} cores) | Timer freq: {d} ", .{
+            @tagName(target.os.tag),
+            @tagName(target.cpu.arch),
+            target.cpu.model.name,
+            cpu_count,
+            timer_freq,
+        }) catch &.{};
+
+        var upper: [256]u8 = undefined;
+        const final = std.ascii.upperString(&upper, &buffer);
+
+        // sys_info is all ASCII, so byte length equals visible width.
+        // +2 accounts for the surrounding │ │ borders.
+        const width = sys_info.len + 2;
+
+        printHeader(width);
+        print("│{s}│\n", .{final[0..sys_info.len]});
+        printFooter(width);
+
         print("Total time: {d:.4}ms\n", .{total_ms});
 
         var indent_buf: [max_depth * 2]u8 = @splat(' ');
@@ -234,18 +265,13 @@ const ProfilerImpl = struct {
     }
 };
 
-fn logSystemInfo(timer_freq: u64) void {
-    const cpu_count = std.Thread.getCpuCount() catch 0;
-    print(
-        "OS: {s} | Arch: {s} | CPU: {s} ({d} cores) | Timer freq: {d}\n",
-        .{
-            @tagName(target.os.tag),
-            @tagName(target.cpu.arch),
-            target.cpu.model.name,
-            cpu_count,
-            timer_freq,
-        },
-    );
+fn printFooter(length: u64) void {
+    print("└", .{});
+    var i: usize = 0;
+    while (i < length - 2) : (i += 1) {
+        print("─", .{});
+    }
+    print("┘\n", .{});
 }
 
 fn printHeader(length: usize) void {
@@ -258,12 +284,12 @@ fn printHeader(length: usize) void {
     }
     print("┐\n", .{});
 
-    print("└", .{});
+    print("├", .{});
     i = 0;
     while (i < length - 2) : (i += 1) {
         print("┴", .{});
     }
-    print("┘\n", .{});
+    print("┤\n", .{});
 }
 
 pub fn sameSrc(a: builtin.SourceLocation, b: builtin.SourceLocation) bool {
