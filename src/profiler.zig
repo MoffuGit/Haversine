@@ -400,10 +400,9 @@ test "Test Basic Profiler" {
 
     var profiler: Profiler = .empty;
 
-    profiler.init();
+    profiler.init("test basic profiler");
     defer {
         profiler.deinit();
-        profiler.log();
     }
 
     var zone: Zone = .empty;

@@ -53,7 +53,6 @@ pub const empty: Tester = .{
 pub fn init(self: *Tester, alloc: Allocator, label: []const u8, config: Config) !void {
     const capacity = config.max_runs orelse max_default;
     self.runs = try alloc.alloc(Run, capacity);
-    @memset(self.runs, .{});
     self.label = label;
     self.config = config;
     self.start = cpu.readCpuTimer();
@@ -91,12 +90,11 @@ pub fn run(
             self.min_offset = self.offset;
             self.min_tick = profiler.end;
         }
-
         if (self.offset < self.config.min_runs) continue;
 
-        const total_ms = 1000.0 * @as(f64, @floatFromInt(total)) / @as(f64, @floatFromInt(timer_freq));
+        const last_min = 1000.0 * @as(f64, @floatFromInt(profiler.end - self.min_tick)) / @as(f64, @floatFromInt(timer_freq));
 
-        if (total_ms >= self.config.stop_after_no_new_min_ms) break;
+        if (last_min >= self.config.stop_after_no_new_min_ms) break;
     }
 }
 
