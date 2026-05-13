@@ -56,7 +56,5 @@ pub fn process(self: *Processor) f64 {
         count += reference.referenceHaversine(p.x0, p.y0, p.x1, p.y1, 6372.8);
     }
 
-    std.log.debug("{d}", .{count});
-
     return count;
 }
