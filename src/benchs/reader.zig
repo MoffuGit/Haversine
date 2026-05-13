@@ -38,13 +38,17 @@ const strategies: []const Strategy = &.{
         .cb = allocBuffer,
         .label = "allocBuffer",
     },
+    .{
+        .cb = writeBuffer,
+        .label = "writeBuffer",
+    },
 };
 
 test "Bench Reads" {
     const io = std.testing.io;
     const gpa = std.testing.allocator;
 
-    const path = "./generated/43564768_10_13832.41333492269.json";
+    const path = "./generated/43564768_100000000_10010.628207263575.json";
 
     const stat = try std.Io.Dir.cwd().statFile(io, path, .{});
 
@@ -142,24 +146,13 @@ fn allocBuffer(_ctx: ?*Context, _: *Profiler.Profiler) !void {
     }
 }
 
-//BUG:
-//this things dont work, they fail with INVAL,
-//the file size is the issue,
-// fn readFileAlloc(ctx: *Context, profiler: *Profiler.Profiler) !void {
-//     var z: Profiler.Zone = .empty;
-//     z.init(@src(), profiler, .{ .label = "readBuffered", .bytes = ctx.file_size });
-//     defer z.deinit(profiler);
-//
-//     // const file = try std.Io.Dir.cwd().readFileAlloc(ctx.io, ctx.path, ctx.alloc, .unlimited);
-//     // defer ctx.alloc.free(file);
-// }
-//
-// pub fn readFile(ctx: *Context, profiler: *Profiler.Profiler) !void {
-//     var z: Profiler.Zone = .empty;
-//     z.init(@src(), profiler, .{ .label = "readBuffered", .bytes = ctx.file_size });
-//     defer z.deinit(profiler);
-//
-//     const content = try ctx.alloc.alloc(u8, ctx.file_size);
-//     defer ctx.alloc.free(content);
-//     _ = try std.Io.Dir.cwd().readFile(ctx.io, ctx.path, content);
-// }
+fn writeBuffer(_ctx: ?*Context, _: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        const data = try ctx.alloc.alloc(u8, ctx.file_size);
+        defer ctx.alloc.free(data);
+
+        for (0..data.len) |idx| {
+            data[idx] = @intCast(idx);
+        }
+    }
+}
