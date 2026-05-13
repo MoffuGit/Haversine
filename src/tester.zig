@@ -21,6 +21,8 @@ pub const Config = struct {
     max_runs: ?u64 = null,
     /// Stop once no new total-elapsed minimum has been observed for this many milliseconds.
     stop_after_no_new_min_ms: f64 = 2_000.0,
+
+    log_profiler: bool = false,
 };
 
 const Run = struct { profiler: Profiler = .empty, fail: bool = false };
@@ -152,4 +154,9 @@ pub fn log(self: *const Tester) void {
 
     print("\n", .{});
     printpkg.printResult(&.{ sys_info, label_info, stats_info }, &.{});
+
+    if (self.config.log_profiler) {
+        const r = &self.runs[self.min_offset];
+        r.profiler.log();
+    }
 }

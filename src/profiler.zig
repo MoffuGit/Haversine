@@ -391,6 +391,7 @@ const ZoneImpl = struct {
         var delta: Data = .{};
 
         delta.elapsed = cpu.readCpuTimer() - self.start;
+        delta.bytes = self.bytes;
 
         if (self.flags.page_faults) {
             const rusage = posix.getrusage(0);
@@ -400,7 +401,6 @@ const ZoneImpl = struct {
         }
 
         const anchor = &profiler.anchors[self.anchor_idx];
-        // Sync any newly-added children back to the anchor.
         anchor.first_child = profiler.stack[profiler.depth].first_child;
         anchor.exclusive.add(delta);
         anchor.inclusive = self.old_inclusive;

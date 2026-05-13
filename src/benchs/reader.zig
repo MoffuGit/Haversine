@@ -49,7 +49,8 @@ test "Bench Reads" {
         try tester.init(gpa, strategy.label, .{
             .min_runs = 3,
             .stop_after_no_new_min_ms = 10000,
-            .max_runs = 1024 * 1024,
+            .max_runs = 20,
+            .log_profiler = true,
         });
         defer tester.deinit(gpa);
 
@@ -130,10 +131,18 @@ fn allocBuffer(_ctx: ?*Context, _: *Profiler.Profiler) !void {
     }
 }
 
-fn writeBuffer(_ctx: ?*Context, _: *Profiler.Profiler) !void {
+fn writeBuffer(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
         const data = try ctx.alloc.alloc(u8, ctx.file_size);
         defer ctx.alloc.free(data);
+
+        var zone: Profiler.Zone = .empty;
+        zone.init(@src(), profiler, .{
+            .bytes = ctx.file_size,
+            .label = "writeIntoBuffer",
+            .flags = .{ .page_faults = true },
+        });
+        defer zone.deinit(profiler);
 
         for (0..data.len) |idx| {
             data[idx] = @intCast(idx);
