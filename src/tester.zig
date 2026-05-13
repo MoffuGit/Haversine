@@ -128,7 +128,7 @@ pub fn log(self: *const Tester) void {
     const max_ms: f64 = if (ok_runs == 0) 0 else 1000.0 * @as(f64, @floatFromInt(max_total)) / freq_f;
     const avg_ms: f64 = if (ok_runs == 0) 0 else 1000.0 * (@as(f64, @floatFromInt(sum_total)) / @as(f64, @floatFromInt(ok_runs))) / freq_f;
 
-    var sys_buf: [256]u8 = @splat(' ');
+    var sys_buf: [256]u8 = undefined;
     const cpu_count = std.Thread.getCpuCount() catch 0;
     const sys_info = std.fmt.bufPrint(&sys_buf, " OS: {s} | Arch: {s} | CPU: {s} ({d} cores) ", .{
         @tagName(target.os.tag),
@@ -137,7 +137,7 @@ pub fn log(self: *const Tester) void {
         cpu_count,
     }) catch &.{};
 
-    var label_buf: [256]u8 = @splat(' ');
+    var label_buf: [256]u8 = undefined;
     const label_info = std.fmt.bufPrint(&label_buf, " {s} | runs: {d} | fails: {d} | Timer freq: {d} ", .{
         self.label,
         completed,
@@ -145,19 +145,11 @@ pub fn log(self: *const Tester) void {
         timer_freq,
     }) catch &.{};
 
-    var stats_buf: [256]u8 = @splat(' ');
+    var stats_buf: [256]u8 = undefined;
     const stats_info = std.fmt.bufPrint(&stats_buf, " min: {d:.4}ms | max: {d:.4}ms | avg: {d:.4}ms ", .{
         min_ms, max_ms, avg_ms,
     }) catch &.{};
 
-    const width = @max(@max(sys_info.len, label_info.len), stats_info.len) + 2;
-
     print("\n", .{});
-    printpkg.printHeader(width);
-    print("│{s}│\n", .{sys_buf[0 .. width - 2]});
-    printpkg.printDivider(width);
-    print("│{s}│\n", .{label_buf[0 .. width - 2]});
-    printpkg.printDivider(width);
-    print("│{s}│\n", .{stats_buf[0 .. width - 2]});
-    printpkg.printFooter(width);
+    printpkg.printResult(&.{ sys_info, label_info, stats_info }, &.{});
 }

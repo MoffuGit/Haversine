@@ -85,10 +85,9 @@ const NoopProfiler = struct {
         const total_elapsed = self.end - self.start;
         const total_ms = 1000.0 * @as(f64, @floatFromInt(total_elapsed)) / @as(f64, @floatFromInt(timer_freq));
 
-        var buffer: [256]u8 = undefined;
+        var sys_buf: [256]u8 = undefined;
         const cpu_count = std.Thread.getCpuCount() catch 0;
-
-        const sys_info = std.fmt.bufPrint(&buffer, "OS: {s} | Arch: {s} | CPU: {s} ({d} cores) | Timer freq: {d}\n", .{
+        const sys_info = std.fmt.bufPrint(&sys_buf, " OS: {s} | Arch: {s} | CPU: {s} ({d} cores) | Timer freq: {d} ", .{
             @tagName(target.os.tag),
             @tagName(target.cpu.arch),
             target.cpu.model.name,
@@ -96,9 +95,10 @@ const NoopProfiler = struct {
             timer_freq,
         }) catch &.{};
 
-        printpkg.printHeader(sys_info.len);
-        print("{s}", .{sys_info});
-        print("Total time: {d:.4}ms\n", .{total_ms});
+        var total_buf: [128]u8 = undefined;
+        const total_info = std.fmt.bufPrint(&total_buf, " Total time: {d:.4}ms ", .{total_ms}) catch &.{};
+
+        printpkg.printResult(&.{ sys_info, total_info }, &.{});
     }
 };
 
@@ -150,39 +150,38 @@ const ProfilerImpl = struct {
         const total_elapsed = self.end - self.start;
         const total_ms = 1000.0 * @as(f64, @floatFromInt(total_elapsed)) / @as(f64, @floatFromInt(timer_freq));
 
-        var buffer: [256]u8 = @splat(' ');
-        const cpu_count = std.Thread.getCpuCount() catch 0;
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const ally = arena.allocator();
 
-        const sys_info = std.fmt.bufPrint(&buffer, " OS: {s} | ARCH: {s} | CPU: {s} ({d} cores) ", .{
+        var sys_buf: [256]u8 = undefined;
+        const cpu_count = std.Thread.getCpuCount() catch 0;
+        const sys_info = std.fmt.bufPrint(&sys_buf, " OS: {s} | ARCH: {s} | CPU: {s} ({d} cores) ", .{
             @tagName(target.os.tag),
             @tagName(target.cpu.arch),
             target.cpu.model.name,
             cpu_count,
         }) catch &.{};
 
-        var upper: [256]u8 = @splat(' ');
-        _ = std.ascii.upperString(&upper, &buffer);
+        var upper_buf: [256]u8 = undefined;
+        const sys_upper = std.ascii.upperString(upper_buf[0..sys_info.len], sys_info);
 
-        var profiler: [256]u8 = @splat(' ');
-        const data = std.fmt.bufPrint(&profiler, " {s} | {d:.4}ms | Timer freq: {d} ", .{
-            self.label, total_ms,
-            timer_freq,
-        }) catch &.{};
+        const data = std.fmt.allocPrint(
+            ally,
+            " {s} | {d:.4}ms | Timer freq: {d} ",
+            .{ self.label, total_ms, timer_freq },
+        ) catch return;
 
-        const width = @max(sys_info.len, data.len) + 2;
+        var rows: std.ArrayList(printpkg.Row) = .empty;
 
-        print("\n", .{});
-        printpkg.printHeader(width);
-        print("│{s}│\n", .{upper[0 .. width - 2]});
-        printpkg.printDivider(width);
+        var indent_buf: [max_depth * 4]u8 = @splat(' ');
 
-        print("│{s}│\n", .{profiler[0 .. width - 2]});
-        printpkg.printFooter(width);
-
-        var divider: [256]u8 = @splat('/');
-        print("{s}\n\n", .{divider[0..width]});
-
-        var indent_buf: [max_depth * 2]u8 = @splat(' ');
+        var anchors_unit: std.ArrayList(u8) = .empty;
+        // Lead the anchors row with a full-width '/' separator line followed
+        // by an empty padded line.
+        anchors_unit.appendSlice(ally, &printpkg.fill('/')) catch return;
+        anchors_unit.appendSlice(ally, "\n\n") catch return;
+        var first_anchor = true;
 
         for (self.anchors[0..self.anchor_count], 0..) |anchor, i| {
             if (anchor.hits == 0) continue;
@@ -195,12 +194,15 @@ const ProfilerImpl = struct {
             const depth = self.anchorDepth(@intCast(i));
             const indent = indent_buf[0 .. depth * 4];
 
+            if (!first_anchor) anchors_unit.appendSlice(ally, "\n\n") catch return;
+            first_anchor = false;
+
             if (has_children) {
                 const inclusive_pct = (100.0 * @as(f64, @floatFromInt(anchor.inclusive.elapsed))) / @as(f64, @floatFromInt(total_elapsed));
                 const inclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.inclusive.elapsed)) / @as(f64, @floatFromInt(timer_freq));
-
-                print(
-                    "{s} {s}:{d} - {d:.4}ms, {d:.2}% - w/children - {d:.4}ms, {d:.2}% | {s}:{d} |\n",
+                anchors_unit.print(
+                    ally,
+                    " {s}{s}:{d} - {d:.4}ms, {d:.2}% - w/children - {d:.4}ms, {d:.2}% | {s}:{d} ",
                     .{
                         indent,
                         anchor.label,
@@ -212,10 +214,11 @@ const ProfilerImpl = struct {
                         anchor.src.file,
                         anchor.src.line,
                     },
-                );
+                ) catch return;
             } else {
-                print(
-                    "{s} {s}:{d} - {d:.4}ms, {d:.2}% | {s}:{d} |\n",
+                anchors_unit.print(
+                    ally,
+                    " {s}{s}:{d} - {d:.4}ms, {d:.2}% | {s}:{d} ",
                     .{
                         indent,
                         anchor.label,
@@ -225,7 +228,7 @@ const ProfilerImpl = struct {
                         anchor.src.file,
                         anchor.src.line,
                     },
-                );
+                ) catch return;
             }
 
             if (anchor.inclusive.bytes > 0) {
@@ -234,15 +237,17 @@ const ProfilerImpl = struct {
                 const gb = @as(f64, @floatFromInt(anchor.inclusive.bytes)) / gigabyte;
                 const gbps = gb / seconds;
 
-                print(
-                    "{s} → Memory |{d:.4}gb at {d:.4}gb/s|\n",
+                anchors_unit.print(
+                    ally,
+                    "\n {s} → Memory |{d:.4}gb at {d:.4}gb/s| ",
                     .{ indent, gb, gbps },
-                );
+                ) catch return;
             }
             if (anchor.inclusive.ru_majflt > 0 or anchor.inclusive.ru_minflt > 0) {
                 if (has_children) {
-                    print(
-                        "{s} → Page Faults |min: {}, maj: {}| w/children |min: {}, maj: {}|\n",
+                    anchors_unit.print(
+                        ally,
+                        "\n {s} → Page Faults |min: {}, maj: {}| w/children |min: {}, maj: {}| ",
                         .{
                             indent,
                             anchor.exclusive.ru_minflt,
@@ -250,17 +255,23 @@ const ProfilerImpl = struct {
                             anchor.inclusive.ru_minflt,
                             anchor.inclusive.ru_majflt,
                         },
-                    );
+                    ) catch return;
                 } else {
-                    print(
-                        "{s} → Page Faults |min: {}, maj: {}|\n",
+                    anchors_unit.print(
+                        ally,
+                        "\n {s} → Page Faults |min: {}, maj: {}| ",
                         .{ indent, anchor.exclusive.ru_minflt, anchor.exclusive.ru_majflt },
-                    );
+                    ) catch return;
                 }
             }
-
-            if (!has_children) print("\n", .{});
         }
+
+        if (!first_anchor) {
+            rows.append(ally, .{ .text = anchors_unit.items }) catch return;
+        }
+
+        print("\n", .{});
+        printpkg.printResult(&.{ sys_upper, data }, rows.items);
     }
 
     fn anchorDepth(self: *ProfilerImpl, idx: u32) usize {
