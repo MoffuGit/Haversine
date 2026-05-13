@@ -18,7 +18,7 @@ const Context = struct {
 
 const Strategy = struct {
     label: []const u8,
-    cb: *const fn (*Context, *Profiler.Profiler) anyerror!void,
+    cb: *const fn (?*Context, *Profiler.Profiler) anyerror!void,
 };
 
 const strategies: []const Strategy = &.{
@@ -70,83 +70,75 @@ test "Bench Reads" {
     }
 }
 
-fn readBuffer64k(ctx: *Context, profiler: *Profiler.Profiler) !void {
-    var z: Profiler.Zone = .empty;
-    z.init(@src(), profiler, .{ .label = "readBuffer64k", .bytes = ctx.file_size });
-    defer z.deinit(profiler);
+fn readBuffer64k(_ctx: ?*Context, _: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        var buffer: [64 * KiB]u8 = undefined;
 
-    var buffer: [64 * KiB]u8 = undefined;
+        var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
+        defer file.close(ctx.io);
 
-    var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
-    defer file.close(ctx.io);
+        var reader = file.reader(ctx.io, &buffer);
+        const interface = &reader.interface;
 
-    var reader = file.reader(ctx.io, &buffer);
-    const interface = &reader.interface;
-
-    while (true) {
-        _ = interface.takeByte() catch break;
+        while (true) {
+            _ = interface.takeByte() catch break;
+        }
     }
 }
 
-fn readBuffer1mb(ctx: *Context, profiler: *Profiler.Profiler) !void {
-    var z: Profiler.Zone = .empty;
-    z.init(@src(), profiler, .{ .label = "readBuffer1mb", .bytes = ctx.file_size });
-    defer z.deinit(profiler);
+fn readBuffer1mb(_ctx: ?*Context, _: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        var buffer: [MiB]u8 = undefined;
 
-    var buffer: [MiB]u8 = undefined;
+        var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
+        defer file.close(ctx.io);
 
-    var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
-    defer file.close(ctx.io);
+        var reader = file.reader(ctx.io, &buffer);
+        const interface = &reader.interface;
 
-    var reader = file.reader(ctx.io, &buffer);
-    const interface = &reader.interface;
-
-    while (true) {
-        _ = interface.takeByte() catch break;
+        while (true) {
+            _ = interface.takeByte() catch break;
+        }
     }
 }
 
-fn readBuffer8mb(ctx: *Context, profiler: *Profiler.Profiler) !void {
-    var z: Profiler.Zone = .empty;
-    z.init(@src(), profiler, .{ .label = "readBuffer8mb", .bytes = ctx.file_size });
-    defer z.deinit(profiler);
+fn readBuffer8mb(_ctx: ?*Context, _: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        var buffer: [MiB * 8]u8 = undefined;
 
-    var buffer: [MiB * 8]u8 = undefined;
+        var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
+        defer file.close(ctx.io);
 
-    var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
-    defer file.close(ctx.io);
+        var reader = file.reader(ctx.io, &buffer);
+        const interface = &reader.interface;
 
-    var reader = file.reader(ctx.io, &buffer);
-    const interface = &reader.interface;
-
-    while (true) {
-        _ = interface.takeByte() catch break;
+        while (true) {
+            _ = interface.takeByte() catch break;
+        }
     }
 }
 
-fn allocBuffer(ctx: *Context, profiler: *Profiler.Profiler) !void {
-    var z: Profiler.Zone = .empty;
-    z.init(@src(), profiler, .{ .label = "allocBuffer", .bytes = ctx.file_size });
-    defer z.deinit(profiler);
+fn allocBuffer(_ctx: ?*Context, _: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        var buffer: [MiB]u8 = undefined;
 
-    var buffer: [MiB]u8 = undefined;
+        var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
+        defer file.close(ctx.io);
 
-    var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
-    defer file.close(ctx.io);
+        const data = try ctx.alloc.alloc(u8, ctx.file_size);
+        defer ctx.alloc.free(data);
 
-    const data = try ctx.alloc.alloc(u8, ctx.file_size);
-    defer ctx.alloc.free(data);
+        var reader = file.reader(ctx.io, &buffer);
+        const interface = &reader.interface;
 
-    var reader = file.reader(ctx.io, &buffer);
-    const interface = &reader.interface;
-
-    var offset: usize = 0;
-    while (offset < data.len) {
-        const remaining = data.len - offset;
-        const chunk_len = @min(remaining, buffer.len);
-        const n = try interface.readSliceShort(data[offset..][0..chunk_len]);
-        if (n == 0) break;
-        offset += n;
+        var offset: usize = 0;
+        while (offset < data.len) {
+            const remaining = data.len - offset;
+            const chunk_len = @min(remaining, buffer.len);
+            const n = try interface.readSliceShort(data[offset..][0..chunk_len]);
+            if (n == 0) break;
+            offset += n;
+        }
     }
 }
 

@@ -117,8 +117,8 @@ const NoopZone = struct {
 
 const ProfilerImpl = struct {
     pub const empty: ProfilerImpl = .{
-        .anchors = @splat(Anchor.empty),
-        .stack = @splat(.{ .anchor_idx = 0, .first_child = null }),
+        .anchors = undefined,
+        .stack = undefined,
         .root_first_child = null,
         .depth = 0,
         .anchor_count = 0,
@@ -284,10 +284,13 @@ pub fn sameSrc(a: builtin.SourceLocation, b: builtin.SourceLocation) bool {
         std.mem.eql(u8, a.fn_name, b.fn_name);
 }
 
-const Options = struct {
-    label: []const u8,
-    bytes: u64 = 0,
+const Flags = packed struct {
+    page_faults: bool = false,
 };
+
+const Options = struct { label: []const u8, bytes: u64 = 0, flags: Flags = .{
+    .page_faults = false,
+} };
 
 const ZoneImpl = struct {
     const Self = @This();
@@ -299,6 +302,7 @@ const ZoneImpl = struct {
     bytes: u64,
     start_ru_minflt: isize,
     start_ru_majflt: isize,
+    flags: Flags = .{},
 
     pub const empty: ZoneImpl = .{
         .anchor_idx = 0,
@@ -352,33 +356,37 @@ const ZoneImpl = struct {
         };
         profiler.depth += 1;
 
-        const rusage = posix.getrusage(0);
+        self.flags = opts.flags;
 
-        self.* = .{
-            .bytes = opts.bytes,
-            .anchor_idx = idx,
-            .parent_idx = parent_idx,
-            .old_inclusive = profiler.anchors[idx].inclusive,
-            .start = cpu.readCpuTimer(),
-            .start_ru_minflt = rusage.minflt,
-            .start_ru_majflt = rusage.majflt,
-        };
+        self.bytes = opts.bytes;
+
+        if (self.flags.page_faults) {
+            const rusage = posix.getrusage(0);
+            self.start_ru_majflt = rusage.majflt;
+            self.start_ru_minflt = rusage.minflt;
+        }
+
+        self.start = cpu.readCpuTimer();
+
+        self.anchor_idx = idx;
+        self.parent_idx = parent_idx;
+        self.old_inclusive = profiler.anchors[idx].inclusive;
     }
 
     pub fn deinit(self: *Self, profiler: *ProfilerImpl) void {
         profiler.depth -= 1;
         std.debug.assert(profiler.stack[profiler.depth].anchor_idx == self.anchor_idx);
 
-        const elapsed = cpu.readCpuTimer() - self.start;
+        var delta: Data = .{};
 
-        const rusage = posix.getrusage(0);
+        delta.elapsed = cpu.readCpuTimer() - self.start;
 
-        const delta: Data = .{
-            .elapsed = elapsed,
-            .bytes = self.bytes,
-            .ru_minflt = rusage.minflt - self.start_ru_minflt,
-            .ru_majflt = rusage.majflt - self.start_ru_majflt,
-        };
+        if (self.flags.page_faults) {
+            const rusage = posix.getrusage(0);
+
+            delta.ru_minflt = rusage.minflt - self.start_ru_minflt;
+            delta.ru_majflt = rusage.majflt - self.start_ru_majflt;
+        }
 
         const anchor = &profiler.anchors[self.anchor_idx];
         // Sync any newly-added children back to the anchor.

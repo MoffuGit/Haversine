@@ -67,8 +67,8 @@ pub fn deinit(self: *Tester, alloc: Allocator) void {
 pub fn run(
     self: *Tester,
     comptime Context: type,
-    ctx: *Context,
-    callback: *const fn (ctx: *Context, profiler: *Profiler) anyerror!void,
+    ctx: ?*Context,
+    callback: *const fn (ctx: ?*Context, profiler: *Profiler) anyerror!void,
 ) !void {
     self.min_tick = cpu.readCpuTimer();
     const timer_freq = cpu.readTimerFreq();
@@ -101,7 +101,7 @@ pub fn run(
 pub fn log(self: *const Tester) void {
     const timer_freq = cpu.readTimerFreq();
 
-    const completed: u64 = if (self.offset < self.runs.len) self.offset + 1 else self.offset;
+    const completed: u64 = @min(self.offset + 1, self.runs.len);
 
     var min_total: u64 = std.math.maxInt(u64);
     var max_total: u64 = 0;

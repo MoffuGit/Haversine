@@ -10,11 +10,9 @@ const Parser = @This();
 
 lexer: Lexer,
 alloc: Allocator,
-zone: Profiler.Zone,
 
 pub fn init(self: *Parser, reader: *std.Io.Reader, alloc: Allocator) void {
     self.* = .{
-        .zone = .empty,
         .lexer = undefined,
         .alloc = alloc,
     };
@@ -27,10 +25,6 @@ pub fn deinit(self: *Parser) void {
 }
 
 pub fn next(self: *Parser) ?json.Points {
-    self.zone = .empty;
-    self.zone.init(@src(), GlobalProfiler, .{ .label = "parser" });
-    defer self.zone.deinit(GlobalProfiler);
-
     while (self.lexer.next_token()) |token| {
         if (token == .LBrace or token == .LBracket) break;
     }

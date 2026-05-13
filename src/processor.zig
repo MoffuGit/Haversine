@@ -35,18 +35,23 @@ pub fn deinit(self: *Processor) void {
 }
 
 pub fn process(self: *Processor) f64 {
-    var z_read: Profiler.Zone = .empty;
-    z_read.init(@src(), GlobalProfiler, .{ .label = "reader", .bytes = self.file_size });
-    defer z_read.deinit(GlobalProfiler);
-
     var count: f64 = 0.0;
 
-    var zone: Profiler.Zone = .empty;
-    while (self.parser.next()) |p| {
-        zone = .empty;
+    var parser_zone: Profiler.Zone = .empty;
+    parser_zone.init(@src(), GlobalProfiler, .{
+        .label = "parser",
+        .bytes = self.file_size,
+        .flags = .{ .page_faults = true },
+    });
+    defer parser_zone.deinit(GlobalProfiler);
 
-        zone.init(@src(), GlobalProfiler, .{ .label = "haversineFn", .bytes = @sizeOf(json.Points) });
-        defer zone.deinit(GlobalProfiler);
+    var haversine_zone: Profiler.Zone = .empty;
+
+    while (self.parser.next()) |p| {
+        haversine_zone = .empty;
+
+        haversine_zone.init(@src(), GlobalProfiler, .{ .label = "haversineFn", .bytes = @sizeOf(json.Points) });
+        defer haversine_zone.deinit(GlobalProfiler);
 
         count += reference.referenceHaversine(p.x0, p.y0, p.x1, p.y1, 6372.8);
     }
