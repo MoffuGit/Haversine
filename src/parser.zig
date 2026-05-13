@@ -26,7 +26,7 @@ pub fn deinit(self: *Parser) void {
 
 pub fn next(self: *Parser) ?json.Points {
     while (self.lexer.next_token()) |token| {
-        if (token == .LBrace or token == .LBracket) break;
+        if (token == .LBrace) break;
     }
 
     var points: json.Points = .{};
