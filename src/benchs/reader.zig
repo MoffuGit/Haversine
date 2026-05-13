@@ -23,22 +23,6 @@ const Strategy = struct {
 
 const strategies: []const Strategy = &.{
     .{
-        .cb = readBuffer64k,
-        .label = "readBuffer64k",
-    },
-    .{
-        .cb = readBuffer1mb,
-        .label = "readBuffer1mb",
-    },
-    .{
-        .cb = readBuffer8mb,
-        .label = "readBuffer8mb",
-    },
-    .{
-        .cb = allocBuffer,
-        .label = "allocBuffer",
-    },
-    .{
         .cb = writeBuffer,
         .label = "writeBuffer",
     },
