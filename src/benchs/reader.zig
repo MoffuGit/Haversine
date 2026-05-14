@@ -33,7 +33,7 @@ test "Bench Reads" {
     const io = std.testing.io;
     const gpa = std.testing.allocator;
 
-    const path = "./generated/43564768_100000000_10010.628207263575.json";
+    const path = "./generated/43564768_1000000_10011.998232663716.json";
 
     const stat = try std.Io.Dir.cwd().statFile(io, path, .{});
 
