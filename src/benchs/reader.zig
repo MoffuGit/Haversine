@@ -147,7 +147,21 @@ fn writeBuffer(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
         defer ctx.alloc.free(data);
 
         for (0..data.len) |idx| {
-            data[idx] = @intCast(idx);
+            data[idx] = @truncate(idx);
         }
     }
 }
+
+// fn moveAllBytes(count: u64, data: *anyopaque) void {
+//     asm volatile (
+//         \\ eor x9, x9, x9
+//         \\1:
+//         \\ strb w9, [%[data], x9]
+//         \\ add x9, x9, #1
+//         \\ cmp x9, %[count]
+//         \\ b.lo 1b
+//         :
+//         : [count] "r" (count),
+//           [data] "r" (data),
+//         : .{ .x9 = true, .memory = true });
+// }

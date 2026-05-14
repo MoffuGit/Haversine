@@ -77,6 +77,7 @@ pub fn run(
     while (self.offset < self.runs.len) : (self.offset += 1) {
         const r = &self.runs[self.offset];
         const profiler = &r.profiler;
+        profiler.* = .empty;
         {
             profiler.init("TEST PROFILER");
             defer profiler.deinit();
