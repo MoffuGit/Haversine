@@ -1,0 +1,166 @@
+const std = @import("std");
+const mem = std.mem;
+const Allocator = std.mem.Allocator;
+const print = std.debug.print;
+
+const Profiler = @import("../profiler.zig");
+const Tester = @import("../tester.zig");
+
+const KiB = 1024;
+const MiB = 1024 * KiB;
+
+const Context = struct {
+    io: std.Io,
+    alloc: Allocator,
+    buffer: []u8,
+    zone: Profiler.Zone,
+};
+
+test "Bench Read Ports" {
+    const io = std.testing.io;
+    const gpa = std.testing.allocator;
+
+    const buffer = try gpa.alloc(u8, 100000000);
+    defer gpa.free(buffer);
+
+    for (0..buffer.len) |idx| {
+        buffer[idx] = 0;
+    }
+
+    var ctx: Context = .{
+        .io = io,
+        .alloc = gpa,
+        .buffer = buffer,
+        .zone = .empty,
+    };
+
+    try Tester.runAll(gpa, .{
+        .min_runs = 3,
+        .stop_after_no_new_min_ms = 1000,
+        .max_runs = 10000,
+        .log_profiler = true,
+    }, Context, &ctx, .{ readx1, readx2, readx3, readx4, readx5, readx6 });
+}
+
+fn readx1(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{ .bytes = ctx.buffer.len, .label = "readx1" });
+        defer ctx.zone.deinit(profiler);
+
+        asm volatile (
+            \\1:
+            \\ ldr x9, [%[buffer]]
+            \\ subs %[count], %[count], #1
+            \\ b.gt 1b
+            :
+            : [count] "r" (ctx.buffer.len),
+              [buffer] "r" (ctx.buffer.ptr),
+            : .{ .x9 = true, .memory = true });
+    }
+}
+
+fn readx2(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{ .bytes = ctx.buffer.len, .label = "readx2" });
+        defer ctx.zone.deinit(profiler);
+
+        asm volatile (
+            \\1:
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ subs %[count], %[count], #2
+            \\ b.gt 1b
+            :
+            : [count] "r" (ctx.buffer.len),
+              [buffer] "r" (ctx.buffer.ptr),
+            : .{ .x9 = true, .memory = true });
+    }
+}
+
+fn readx3(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{ .bytes = ctx.buffer.len, .label = "readx3" });
+        defer ctx.zone.deinit(profiler);
+
+        asm volatile (
+            \\1:
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ subs %[count], %[count], #3
+            \\ b.gt 1b
+            :
+            : [count] "r" (ctx.buffer.len),
+              [buffer] "r" (ctx.buffer.ptr),
+            : .{ .x9 = true, .memory = true });
+    }
+}
+
+fn readx4(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{ .bytes = ctx.buffer.len, .label = "readx4" });
+        defer ctx.zone.deinit(profiler);
+
+        asm volatile (
+            \\1:
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ subs %[count], %[count], #4
+            \\ b.gt 1b
+            :
+            : [count] "r" (ctx.buffer.len),
+              [buffer] "r" (ctx.buffer.ptr),
+            : .{ .x9 = true, .memory = true });
+    }
+}
+
+fn readx5(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{ .bytes = ctx.buffer.len, .label = "readx5" });
+        defer ctx.zone.deinit(profiler);
+
+        asm volatile (
+            \\1:
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ subs %[count], %[count], #5
+            \\ b.gt 1b
+            :
+            : [count] "r" (ctx.buffer.len),
+              [buffer] "r" (ctx.buffer.ptr),
+            : .{ .x9 = true, .memory = true });
+    }
+}
+
+fn readx6(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{ .bytes = ctx.buffer.len, .label = "readx6" });
+        defer ctx.zone.deinit(profiler);
+
+        asm volatile (
+            \\1:
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ ldr x9, [%[buffer]]
+            \\ subs %[count], %[count], #6
+            \\ b.gt 1b
+            :
+            : [count] "r" (ctx.buffer.len),
+              [buffer] "r" (ctx.buffer.ptr),
+            : .{ .x9 = true, .memory = true });
+    }
+}
