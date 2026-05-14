@@ -1,5 +1,7 @@
 const reader = @import("reader.zig");
+const noop = @import("noop_bottleneck.zig");
 
 test {
-    _ = reader;
+    _ = noop;
+    // _ = reader;
 }
