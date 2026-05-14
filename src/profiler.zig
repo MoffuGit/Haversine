@@ -184,6 +184,7 @@ const ProfilerImpl = struct {
         if (text.len == 0) return;
         printpkg.printPlainFill('/', width);
         print("\n{s}\n", .{text});
+        printpkg.printPlainFill('/', width);
     }
 
     pub fn buildAnchorsText(
