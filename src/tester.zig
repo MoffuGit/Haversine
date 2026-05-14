@@ -66,6 +66,45 @@ pub fn deinit(self: *Tester, alloc: Allocator) void {
     self.runs = &.{};
 }
 
+fn fnName(comptime cb: anytype) []const u8 {
+    @setEvalBranchQuota(10_000);
+    const tn = @typeName(@TypeOf(.{cb}));
+    const marker = "(function '";
+    const start = std.mem.indexOf(u8, tn, marker) orelse return "?";
+    const after = tn[start + marker.len ..];
+    const end = std.mem.indexOfScalar(u8, after, '\'') orelse return "?";
+    return after[0..end];
+}
+
+pub fn runAll(
+    alloc: Allocator,
+    config: Config,
+    comptime Context: type,
+    ctx: ?*Context,
+    comptime callbacks: anytype,
+) !void {
+    const capacity = config.max_runs orelse max_default;
+    const runs = try alloc.alloc(Run, capacity);
+    defer alloc.free(runs);
+
+    var tester: Tester = .empty;
+    tester.config = config;
+    tester.runs = runs;
+
+    inline for (callbacks) |cb| {
+        tester.label = comptime fnName(cb);
+        tester.offset = 0;
+        tester.min = std.math.maxInt(u64);
+        tester.min_tick = 0;
+        tester.min_offset = 0;
+        tester.start = cpu.readCpuTimer();
+
+        try tester.run(Context, ctx, cb);
+        tester.end = cpu.readCpuTimer();
+        tester.log();
+    }
+}
+
 pub fn run(
     self: *Tester,
     comptime Context: type,

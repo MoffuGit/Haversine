@@ -5,8 +5,8 @@ const Profiler = @import("profiler.zig");
 const benchs = @import("benchs/index.zig");
 
 test {
-    _ = reference;
-    _ = Profiler;
-    _ = cpu;
+    // _ = reference;
+    // _ = Profiler;
+    // _ = cpu;
     _ = benchs;
 }

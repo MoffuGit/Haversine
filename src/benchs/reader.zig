@@ -17,34 +17,6 @@ const Context = struct {
     zone: Profiler.Zone,
 };
 
-const Strategy = struct {
-    label: []const u8,
-    cb: *const fn (?*Context, *Profiler.Profiler) anyerror!void,
-};
-
-const strategies: []const Strategy = &.{
-    .{
-        .cb = writeBuffer,
-        .label = "writeBuffer",
-    },
-    .{
-        .cb = moveAllBytes,
-        .label = "moveAllBytes",
-    },
-    .{
-        .cb = noopAllBytes,
-        .label = "noopAllBytes",
-    },
-    .{
-        .cb = cmpAllBytes,
-        .label = "cmpAllBytes",
-    },
-    .{
-        .cb = decAllBytes,
-        .label = "decAllBytes",
-    },
-};
-
 test "Bench Reads" {
     const io = std.testing.io;
     const gpa = std.testing.allocator;
@@ -61,19 +33,83 @@ test "Bench Reads" {
         .zone = .empty,
     };
 
-    var tester: Tester = undefined;
-    for (strategies) |strategy| {
-        tester = .empty;
-        try tester.init(gpa, strategy.label, .{
-            .min_runs = 3,
-            .stop_after_no_new_min_ms = 10000,
-            .max_runs = 20,
-            .log_profiler = true,
-        });
-        defer tester.deinit(gpa);
+    try Tester.runAll(gpa, .{
+        .min_runs = 3,
+        .stop_after_no_new_min_ms = 10000,
+        .max_runs = 20,
+        .log_profiler = true,
+    }, Context, &ctx, .{ writeBuffer, moveAllBytes, noopAllBytes, cmpAllBytes, decAllBytes });
+}
 
-        try tester.run(Context, &ctx, strategy.cb);
-        tester.log();
+fn writeBuffer(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{
+            .bytes = ctx.file_size,
+            .label = "writeIntoBuffer",
+            .flags = .{ .page_faults = true },
+        });
+        defer ctx.zone.deinit(profiler);
+
+        const data = try ctx.alloc.alloc(u8, ctx.file_size);
+        defer ctx.alloc.free(data);
+
+        for (0..data.len) |idx| {
+            data[idx] = @truncate(idx);
+        }
+    }
+}
+
+fn moveAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{
+            .bytes = ctx.file_size,
+            .label = "moveAllBytes",
+            .flags = .{ .page_faults = true },
+        });
+        defer ctx.zone.deinit(profiler);
+
+        const data = try ctx.alloc.alloc(u8, ctx.file_size);
+        defer ctx.alloc.free(data);
+
+        moveAllBytesAsm(ctx.file_size, @ptrCast(data));
+    }
+}
+
+fn noopAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{
+            .label = "noopAllBytes",
+        });
+        defer ctx.zone.deinit(profiler);
+
+        noopAllBytesAsm(ctx.file_size);
+    }
+}
+
+fn cmpAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{
+            .label = "cmpAllBytes",
+        });
+        defer ctx.zone.deinit(profiler);
+
+        cmpAllBytesAsm(ctx.file_size);
+    }
+}
+
+fn decAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{
+            .label = "decAllBytes",
+        });
+        defer ctx.zone.deinit(profiler);
+
+        decAllBytesAsm(ctx.file_size);
     }
 }
 
@@ -146,78 +182,6 @@ fn allocBuffer(_ctx: ?*Context, _: *Profiler.Profiler) !void {
             if (n == 0) break;
             offset += n;
         }
-    }
-}
-
-fn writeBuffer(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
-    if (_ctx) |ctx| {
-        ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{
-            .bytes = ctx.file_size,
-            .label = "writeIntoBuffer",
-            .flags = .{ .page_faults = true },
-        });
-        defer ctx.zone.deinit(profiler);
-
-        const data = try ctx.alloc.alloc(u8, ctx.file_size);
-        defer ctx.alloc.free(data);
-
-        for (0..data.len) |idx| {
-            data[idx] = @truncate(idx);
-        }
-    }
-}
-
-fn moveAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
-    if (_ctx) |ctx| {
-        ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{
-            .bytes = ctx.file_size,
-            .label = "moveAllBytes",
-            .flags = .{ .page_faults = true },
-        });
-        defer ctx.zone.deinit(profiler);
-
-        const data = try ctx.alloc.alloc(u8, ctx.file_size);
-        defer ctx.alloc.free(data);
-
-        moveAllBytesAsm(ctx.file_size, @ptrCast(data));
-    }
-}
-
-fn noopAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
-    if (_ctx) |ctx| {
-        ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{
-            .label = "noopAllBytes",
-        });
-        defer ctx.zone.deinit(profiler);
-
-        noopAllBytesAsm(ctx.file_size);
-    }
-}
-
-fn cmpAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
-    if (_ctx) |ctx| {
-        ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{
-            .label = "cmpAllBytes",
-        });
-        defer ctx.zone.deinit(profiler);
-
-        cmpAllBytesAsm(ctx.file_size);
-    }
-}
-
-fn decAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
-    if (_ctx) |ctx| {
-        ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{
-            .label = "decAllBytes",
-        });
-        defer ctx.zone.deinit(profiler);
-
-        decAllBytesAsm(ctx.file_size);
     }
 }
 

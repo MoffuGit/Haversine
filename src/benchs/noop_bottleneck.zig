@@ -15,30 +15,6 @@ const Context = struct {
     loop: u64,
 };
 
-const Strategy = struct {
-    label: []const u8,
-    cb: *const fn (?*Context, *Profiler.Profiler) anyerror!void,
-};
-
-const strategies: []const Strategy = &.{
-    .{
-        .label = "noop",
-        .cb = noop,
-    },
-    .{
-        .label = "noop3bytes",
-        .cb = noop3bytes,
-    },
-    .{
-        .label = "noop9bytes",
-        .cb = noop9bytes,
-    },
-    .{
-        .label = "noop16bytes",
-        .cb = noop16bytes,
-    },
-};
-
 test "Bench Noop Bottlenecks" {
     const io = std.testing.io;
     const gpa = std.testing.allocator;
@@ -49,20 +25,12 @@ test "Bench Noop Bottlenecks" {
         .loop = 10000000,
     };
 
-    var tester: Tester = undefined;
-    for (strategies) |strategy| {
-        tester = .empty;
-        try tester.init(gpa, strategy.label, .{
-            .min_runs = 3,
-            .stop_after_no_new_min_ms = 10000,
-            .max_runs = 100,
-            .log_profiler = true,
-        });
-        defer tester.deinit(gpa);
-
-        try tester.run(Context, &ctx, strategy.cb);
-        tester.log();
-    }
+    try Tester.runAll(gpa, .{
+        .min_runs = 3,
+        .stop_after_no_new_min_ms = 10000,
+        .max_runs = 100,
+        .log_profiler = true,
+    }, Context, &ctx, .{ noop, noop3bytes, noop9bytes, noop16bytes });
 }
 
 fn noop(_ctx: ?*Context, _: *Profiler.Profiler) !void {

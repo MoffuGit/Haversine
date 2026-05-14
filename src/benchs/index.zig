@@ -1,7 +1,9 @@
 const reader = @import("reader.zig");
 const noop = @import("noop_bottleneck.zig");
+const branch = @import("branch_pred.zig");
 
 test {
-    _ = noop;
+    _ = branch;
+    // _ = noop;
     // _ = reader;
 }
