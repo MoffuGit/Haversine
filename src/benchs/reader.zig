@@ -14,6 +14,7 @@ const Context = struct {
     alloc: Allocator,
     path: [:0]const u8,
     file_size: u64,
+    zone: Profiler.Zone,
 };
 
 const Strategy = struct {
@@ -41,6 +42,7 @@ test "Bench Reads" {
         .alloc = gpa,
         .path = path,
         .file_size = stat.size,
+        .zone = .empty,
     };
 
     var tester: Tester = undefined;
@@ -133,16 +135,16 @@ fn allocBuffer(_ctx: ?*Context, _: *Profiler.Profiler) !void {
 
 fn writeBuffer(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
-        const data = try ctx.alloc.alloc(u8, ctx.file_size);
-        defer ctx.alloc.free(data);
-
-        var zone: Profiler.Zone = .empty;
-        zone.init(@src(), profiler, .{
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{
             .bytes = ctx.file_size,
             .label = "writeIntoBuffer",
             .flags = .{ .page_faults = true },
         });
-        defer zone.deinit(profiler);
+        defer ctx.zone.deinit(profiler);
+
+        const data = try ctx.alloc.alloc(u8, ctx.file_size);
+        defer ctx.alloc.free(data);
 
         for (0..data.len) |idx| {
             data[idx] = @intCast(idx);

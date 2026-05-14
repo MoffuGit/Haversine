@@ -30,14 +30,25 @@ pub fn write(alloc: Allocator, io: std.Io, gen: Gen, coords: []Points) !void {
     );
     defer alloc.free(filename);
 
-    const data = try std.json.Stringify.valueAlloc(
-        alloc,
+    var file = try dir.createFile(io, filename, .{});
+    defer file.close(io);
+
+    // Stream the JSON directly to the file instead of buffering the whole
+    // document in memory. With 14 GiB outputs, `valueAlloc` would either OOM
+    // or fail at the single-allocation limit; a fixed-size write buffer keeps
+    // memory use bounded regardless of the output size.
+    const buffer = try alloc.alloc(u8, 1 << 20); // 1 MiB
+    defer alloc.free(buffer);
+
+    var fw = file.writer(io, buffer);
+
+    try std.json.Stringify.value(
         .{ .points = coords },
         .{ .whitespace = .indent_2 },
+        &fw.interface,
     );
-    defer alloc.free(data);
 
-    try dir.writeFile(io, .{ .sub_path = filename, .data = data });
+    try fw.end();
 
     std.log.debug("{s}", .{filename});
 }
