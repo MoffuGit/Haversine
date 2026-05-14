@@ -27,6 +27,10 @@ const strategies: []const Strategy = &.{
         .cb = writeBuffer,
         .label = "writeBuffer",
     },
+    .{
+        .cb = writeMoveAllBytes,
+        .label = "writeMoveAllBytes",
+    },
 };
 
 test "Bench Reads" {
@@ -152,16 +156,33 @@ fn writeBuffer(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     }
 }
 
-// fn moveAllBytes(count: u64, data: *anyopaque) void {
-//     asm volatile (
-//         \\ eor x9, x9, x9
-//         \\1:
-//         \\ strb w9, [%[data], x9]
-//         \\ add x9, x9, #1
-//         \\ cmp x9, %[count]
-//         \\ b.lo 1b
-//         :
-//         : [count] "r" (count),
-//           [data] "r" (data),
-//         : .{ .x9 = true, .memory = true });
-// }
+fn writeMoveAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{
+            .bytes = ctx.file_size,
+            .label = "writeMoveAllBytes",
+            .flags = .{ .page_faults = true },
+        });
+        defer ctx.zone.deinit(profiler);
+
+        const data = try ctx.alloc.alloc(u8, ctx.file_size);
+        defer ctx.alloc.free(data);
+
+        moveAllBytes(ctx.file_size, @ptrCast(data));
+    }
+}
+
+fn moveAllBytes(count: u64, data: *anyopaque) void {
+    asm volatile (
+        \\ eor x9, x9, x9
+        \\1:
+        \\ strb w9, [%[data], x9]
+        \\ add x9, x9, #1
+        \\ cmp x9, %[count]
+        \\ b.lo 1b
+        :
+        : [count] "r" (count),
+          [data] "r" (data),
+        : .{ .x9 = true, .memory = true });
+}

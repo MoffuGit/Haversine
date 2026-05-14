@@ -98,7 +98,7 @@ const NoopProfiler = struct {
         var total_buf: [128]u8 = undefined;
         const total_info = std.fmt.bufPrint(&total_buf, " Total time: {d:.4}ms ", .{total_ms}) catch &.{};
 
-        printpkg.printResult(&.{ sys_info, total_info }, &.{});
+        printpkg.printResult(&.{ sys_info, total_info }, 0);
     }
 };
 
@@ -152,7 +152,7 @@ const ProfilerImpl = struct {
 
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
-        const ally = arena.allocator();
+        const alloc = arena.allocator();
 
         var sys_buf: [256]u8 = undefined;
         const cpu_count = std.Thread.getCpuCount() catch 0;
@@ -167,21 +167,34 @@ const ProfilerImpl = struct {
         const sys_upper = std.ascii.upperString(upper_buf[0..sys_info.len], sys_info);
 
         const data = std.fmt.allocPrint(
-            ally,
+            alloc,
             " {s} | {d:.4}ms | Timer freq: {d} ",
             .{ self.label, total_ms, timer_freq },
         ) catch return;
 
-        var rows: std.ArrayList(printpkg.Row) = .empty;
+        const anchors_text = self.buildAnchorsText(alloc, timer_freq) orelse "";
+        const anchors_width: usize = if (anchors_text.len > 0) printpkg.maxLineLen(anchors_text) + 2 else 0;
 
+        print("\n", .{});
+        printpkg.printResult(&.{ sys_upper, data }, anchors_width);
+        self.logAnchors(anchors_text, anchors_width);
+    }
+
+    pub fn logAnchors(_: *ProfilerImpl, text: []const u8, width: usize) void {
+        if (text.len == 0) return;
+        printpkg.printPlainFill('/', width);
+        print("\n{s}\n", .{text});
+    }
+
+    pub fn buildAnchorsText(
+        self: *ProfilerImpl,
+        alloc: std.mem.Allocator,
+        timer_freq: u64,
+    ) ?[]const u8 {
+        var buf: std.ArrayList(u8) = .empty;
         var indent_buf: [max_depth * 4]u8 = @splat(' ');
-
-        var anchors_unit: std.ArrayList(u8) = .empty;
-        // Lead the anchors row with a full-width '/' separator line followed
-        // by an empty padded line.
-        anchors_unit.appendSlice(ally, &printpkg.fill('/')) catch return;
-        anchors_unit.appendSlice(ally, "\n\n") catch return;
-        var first_anchor = true;
+        var first = true;
+        const total_elapsed = self.end - self.start;
 
         for (self.anchors[0..self.anchor_count], 0..) |anchor, i| {
             if (anchor.hits == 0) continue;
@@ -194,14 +207,14 @@ const ProfilerImpl = struct {
             const depth = self.anchorDepth(@intCast(i));
             const indent = indent_buf[0 .. depth * 4];
 
-            if (!first_anchor) anchors_unit.appendSlice(ally, "\n\n") catch return;
-            first_anchor = false;
+            if (!first) buf.appendSlice(alloc, "\n\n") catch return null;
+            first = false;
 
             if (has_children) {
                 const inclusive_pct = (100.0 * @as(f64, @floatFromInt(anchor.inclusive.elapsed))) / @as(f64, @floatFromInt(total_elapsed));
                 const inclusive_ms = 1000.0 * @as(f64, @floatFromInt(anchor.inclusive.elapsed)) / @as(f64, @floatFromInt(timer_freq));
-                anchors_unit.print(
-                    ally,
+                buf.print(
+                    alloc,
                     " {s}{s}:{d} - {d:.4}ms, {d:.2}% - w/children - {d:.4}ms, {d:.2}% | {s}:{d} ",
                     .{
                         indent,
@@ -214,10 +227,10 @@ const ProfilerImpl = struct {
                         anchor.src.file,
                         anchor.src.line,
                     },
-                ) catch return;
+                ) catch return null;
             } else {
-                anchors_unit.print(
-                    ally,
+                buf.print(
+                    alloc,
                     " {s}{s}:{d} - {d:.4}ms, {d:.2}% | {s}:{d} ",
                     .{
                         indent,
@@ -228,7 +241,7 @@ const ProfilerImpl = struct {
                         anchor.src.file,
                         anchor.src.line,
                     },
-                ) catch return;
+                ) catch return null;
             }
 
             if (anchor.inclusive.bytes > 0) {
@@ -237,16 +250,16 @@ const ProfilerImpl = struct {
                 const gb = @as(f64, @floatFromInt(anchor.inclusive.bytes)) / gigabyte;
                 const gbps = gb / seconds;
 
-                anchors_unit.print(
-                    ally,
+                buf.print(
+                    alloc,
                     "\n {s} → Memory |{d:.4}gb at {d:.4}gb/s| ",
                     .{ indent, gb, gbps },
-                ) catch return;
+                ) catch return null;
             }
             if (anchor.inclusive.ru_majflt > 0 or anchor.inclusive.ru_minflt > 0) {
                 if (has_children) {
-                    anchors_unit.print(
-                        ally,
+                    buf.print(
+                        alloc,
                         "\n {s} → Page Faults |min: {}, maj: {}| w/children |min: {}, maj: {}| ",
                         .{
                             indent,
@@ -255,23 +268,18 @@ const ProfilerImpl = struct {
                             anchor.inclusive.ru_minflt,
                             anchor.inclusive.ru_majflt,
                         },
-                    ) catch return;
+                    ) catch return null;
                 } else {
-                    anchors_unit.print(
-                        ally,
+                    buf.print(
+                        alloc,
                         "\n {s} → Page Faults |min: {}, maj: {}| ",
                         .{ indent, anchor.exclusive.ru_minflt, anchor.exclusive.ru_majflt },
-                    ) catch return;
+                    ) catch return null;
                 }
             }
         }
 
-        if (!first_anchor) {
-            rows.append(ally, .{ .text = anchors_unit.items }) catch return;
-        }
-
-        print("\n", .{});
-        printpkg.printResult(&.{ sys_upper, data }, rows.items);
+        return buf.items;
     }
 
     fn anchorDepth(self: *ProfilerImpl, idx: u32) usize {

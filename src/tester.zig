@@ -154,10 +154,16 @@ pub fn log(self: *const Tester) void {
     }) catch &.{};
 
     print("\n", .{});
-    printpkg.printResult(&.{ sys_info, label_info, stats_info }, &.{});
+    printpkg.printResult(&.{ sys_info, label_info, stats_info }, 0);
 
     if (self.config.log_profiler) {
-        const r = &self.runs[self.min_offset];
-        r.profiler.log();
+        const profiler = &self.runs[self.min_offset].profiler;
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        const anchors_text = profiler.buildAnchorsText(alloc, timer_freq) orelse "";
+        const anchors_width: usize = if (anchors_text.len > 0) printpkg.maxLineLen(anchors_text) + 2 else 0;
+        profiler.logAnchors(anchors_text, anchors_width);
     }
 }
