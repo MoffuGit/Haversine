@@ -239,20 +239,14 @@ pub fn readBufferLd1(buffer: []u8, mask: u64) void {
     asm volatile (
         \\ eor x9, x9, x9
         \\ mov x10, %[buffer]
-        \\ add x11, x10, #64
-        \\ add x12, x10, #128
-        \\ add x13, x10, #192
         \\1:
-        \\ ld1 { v0.16b,  v1.16b,  v2.16b,  v3.16b  }, [x10]
-        \\ ld1 { v4.16b,  v5.16b,  v6.16b,  v7.16b  }, [x11]
-        \\ ld1 { v8.16b,  v9.16b,  v10.16b, v11.16b }, [x12]
-        \\ ld1 { v12.16b, v13.16b, v14.16b, v15.16b }, [x13]
+        \\ ld1 { v0.16b,  v1.16b,  v2.16b,  v3.16b  }, [x10], #64
+        \\ ld1 { v4.16b,  v5.16b,  v6.16b,  v7.16b  }, [x10], #64
+        \\ ld1 { v8.16b,  v9.16b,  v10.16b, v11.16b }, [x10], #64
+        \\ ld1 { v12.16b, v13.16b, v14.16b, v15.16b }, [x10], #64
         \\ add x9, x9, #256
         \\ and x9, x9, %[mask]
         \\ add x10, %[buffer], x9
-        \\ add x11, x10, #64
-        \\ add x12, x10, #128
-        \\ add x13, x10, #192
         \\ subs %[count], %[count], #256
         \\ b.hi 1b
         : [count] "+r" (count),
@@ -261,9 +255,6 @@ pub fn readBufferLd1(buffer: []u8, mask: u64) void {
         : .{
           .x9 = true,
           .x10 = true,
-          .x11 = true,
-          .x12 = true,
-          .x13 = true,
           .v0 = true,
           .v1 = true,
           .v2 = true,
