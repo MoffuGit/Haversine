@@ -48,15 +48,16 @@ fn readx1(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
         ctx.zone.init(@src(), profiler, .{ .bytes = ctx.buffer.len, .label = "readx1" });
         defer ctx.zone.deinit(profiler);
 
+        var count = ctx.buffer.len;
+
         asm volatile (
             \\1:
             \\ ldr x9, [%[buffer]]
             \\ subs %[count], %[count], #1
             \\ b.gt 1b
-            :
-            : [count] "r" (ctx.buffer.len),
-              [buffer] "r" (ctx.buffer.ptr),
-            : .{ .x9 = true, .memory = true });
+            : [count] "+r" (count),
+            : [buffer] "r" (ctx.buffer.ptr),
+            : .{ .x9 = true, .memory = true, .nzcv = true });
     }
 }
 
@@ -66,16 +67,17 @@ fn readx2(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
         ctx.zone.init(@src(), profiler, .{ .bytes = ctx.buffer.len, .label = "readx2" });
         defer ctx.zone.deinit(profiler);
 
+        var count = ctx.buffer.len;
+
         asm volatile (
             \\1:
             \\ ldr x9, [%[buffer]]
             \\ ldr x9, [%[buffer]]
             \\ subs %[count], %[count], #2
             \\ b.gt 1b
-            :
-            : [count] "r" (ctx.buffer.len),
-              [buffer] "r" (ctx.buffer.ptr),
-            : .{ .x9 = true, .memory = true });
+            : [count] "+r" (count),
+            : [buffer] "r" (ctx.buffer.ptr),
+            : .{ .x9 = true, .memory = true, .nzcv = true });
     }
 }
 
@@ -85,6 +87,8 @@ fn readx3(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
         ctx.zone.init(@src(), profiler, .{ .bytes = ctx.buffer.len, .label = "readx3" });
         defer ctx.zone.deinit(profiler);
 
+        var count = ctx.buffer.len;
+
         asm volatile (
             \\1:
             \\ ldr x9, [%[buffer]]
@@ -92,10 +96,9 @@ fn readx3(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
             \\ ldr x9, [%[buffer]]
             \\ subs %[count], %[count], #3
             \\ b.gt 1b
-            :
-            : [count] "r" (ctx.buffer.len),
-              [buffer] "r" (ctx.buffer.ptr),
-            : .{ .x9 = true, .memory = true });
+            : [count] "+r" (count),
+            : [buffer] "r" (ctx.buffer.ptr),
+            : .{ .x9 = true, .memory = true, .nzcv = true });
     }
 }
 
@@ -105,6 +108,8 @@ fn readx4(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
         ctx.zone.init(@src(), profiler, .{ .bytes = ctx.buffer.len, .label = "readx4" });
         defer ctx.zone.deinit(profiler);
 
+        var count = ctx.buffer.len;
+
         asm volatile (
             \\1:
             \\ ldr x9, [%[buffer]]
@@ -113,10 +118,9 @@ fn readx4(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
             \\ ldr x9, [%[buffer]]
             \\ subs %[count], %[count], #4
             \\ b.gt 1b
-            :
-            : [count] "r" (ctx.buffer.len),
-              [buffer] "r" (ctx.buffer.ptr),
-            : .{ .x9 = true, .memory = true });
+            : [count] "+r" (count),
+            : [buffer] "r" (ctx.buffer.ptr),
+            : .{ .x9 = true, .memory = true, .nzcv = true });
     }
 }
 
@@ -125,6 +129,8 @@ fn readx5(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
         ctx.zone = .empty;
         ctx.zone.init(@src(), profiler, .{ .bytes = ctx.buffer.len, .label = "readx5" });
         defer ctx.zone.deinit(profiler);
+
+        var count = ctx.buffer.len;
 
         asm volatile (
             \\1:
@@ -135,10 +141,9 @@ fn readx5(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
             \\ ldr x9, [%[buffer]]
             \\ subs %[count], %[count], #5
             \\ b.gt 1b
-            :
-            : [count] "r" (ctx.buffer.len),
-              [buffer] "r" (ctx.buffer.ptr),
-            : .{ .x9 = true, .memory = true });
+            : [count] "+r" (count),
+            : [buffer] "r" (ctx.buffer.ptr),
+            : .{ .x9 = true, .memory = true, .nzcv = true });
     }
 }
 
@@ -147,6 +152,8 @@ fn readx6(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
         ctx.zone = .empty;
         ctx.zone.init(@src(), profiler, .{ .bytes = ctx.buffer.len, .label = "readx6" });
         defer ctx.zone.deinit(profiler);
+
+        var count = ctx.buffer.len;
 
         asm volatile (
             \\1:
@@ -158,9 +165,8 @@ fn readx6(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
             \\ ldr x9, [%[buffer]]
             \\ subs %[count], %[count], #6
             \\ b.gt 1b
-            :
-            : [count] "r" (ctx.buffer.len),
-              [buffer] "r" (ctx.buffer.ptr),
-            : .{ .x9 = true, .memory = true });
+            : [count] "+r" (count),
+            : [buffer] "r" (ctx.buffer.ptr),
+            : .{ .x9 = true, .memory = true, .nzcv = true });
     }
 }
