@@ -43,6 +43,7 @@ test "Bench Reader Cache" {
         .max_runs = 10000,
         .log_profiler = true,
     }, Context, &ctx, .{
+        read1KiB,
         read128KiB,
         read256KiB,
         read512KiB,
@@ -58,6 +59,16 @@ test "Bench Reader Cache" {
         read16Mib_ld1,
         read1Gib_ld1,
     });
+}
+
+fn read1KiB(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{ .bytes = ctx.buffer.len, .label = "read128KiB" });
+        defer ctx.zone.deinit(profiler);
+
+        readBuffer(ctx.buffer, KiB - 1);
+    }
 }
 
 fn read128KiB(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
