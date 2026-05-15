@@ -40,8 +40,12 @@ test "Bench Read Ports" {
         .max_runs = 10000,
         .log_profiler = true,
     }, Context, &ctx, .{
-        readx1byte, readx1half, readx1word, readx1,
-        readx2byte, readx2half, readx2word, readx2,
+        readx1,
+        readx2,
+        readx3,
+        readx4,
+        // readx1byte, readx1half, readx1word, readx1,
+        // readx2byte, readx2half, readx2word, readx2,
     });
 }
 
