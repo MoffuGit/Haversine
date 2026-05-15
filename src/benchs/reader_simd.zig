@@ -87,7 +87,8 @@ test "Bench Reader SIMD (L1 hit)" {
         .max_runs = 10000,
         .log_profiler = true,
     }, Context, &ctx, .{
-        read_4x2, read_8x2, read_16x2, read_32x2, read_32x3,
+        read_4x2,  read_8x2,   read_16x2,  read_32x2,
+        read_32x3, read_ld4x2, read_ld4x3,
     });
 }
 
@@ -163,9 +164,6 @@ fn read_16x2(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     }
 }
 
-// Read_32x2: two 32-byte loads per iteration -> 64 bytes / iter.
-// AArch64 NEON has no 256-bit registers (no AVX/YMM equivalent without SVE),
-// so each "32-byte load" is expressed as a paired 16-byte load: `ldp q0, q1, [...]`.
 fn read_32x2(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
         ctx.zone = .empty;
@@ -178,15 +176,16 @@ fn read_32x2(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
             \\.balign 64
             \\1:
             \\ ldp q0, q1, [%[buffer]]
-            \\ ldp q0, q1, [%[buffer], #32]
+            \\ ldp q2, q3, [%[buffer], #32]
             \\ subs %[count], %[count], #64
             \\ b.hi 1b
             : [count] "+r" (count),
             : [buffer] "r" (ctx.buffer.ptr),
-            : .{ .v0 = true, .v1 = true, .memory = true, .nzcv = true });
+            : .{ .v0 = true, .v1 = true, .v2 = true, .v3 = true, .memory = true, .nzcv = true });
     }
 }
 
+// Read_32x3: three 32-byte loads per iteration -> 96 bytes / iter.
 fn read_32x3(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
         ctx.zone = .empty;
@@ -199,20 +198,33 @@ fn read_32x3(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
             \\.balign 64
             \\1:
             \\ ldp q0, q1, [%[buffer]]
-            \\ ldp q0, q1, [%[buffer], #32]
-            \\ ldp q0, q1, [%[buffer], #64]
+            \\ ldp q2, q3, [%[buffer], #32]
+            \\ ldp q4, q5, [%[buffer], #64]
             \\ subs %[count], %[count], #96
             \\ b.hi 1b
             : [count] "+r" (count),
             : [buffer] "r" (ctx.buffer.ptr),
-            : .{ .v0 = true, .v1 = true, .memory = true, .nzcv = true });
+            : .{
+              .v0 = true,
+              .v1 = true,
+              .v2 = true,
+              .v3 = true,
+              .v4 = true,
+              .v5 = true,
+              .memory = true,
+              .nzcv = true,
+            });
     }
 }
 
-fn read_32x4(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+// Read_ld4x2: two `ld4` 4-register de-interleaving loads per iteration.
+// Each `ld4 {v0.2d-v3.2d}, [x]` loads 4 Q registers = 64 bytes in a single
+// instruction, so two of them = 128 bytes / iter (same total as read_32x4
+// but with only 2 load instructions issued).
+fn read_ld4x2(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
         ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{ .bytes = total_bytes, .label = "read_32x4" });
+        ctx.zone.init(@src(), profiler, .{ .bytes = total_bytes, .label = "read_ld4x2" });
         defer ctx.zone.deinit(profiler);
 
         var count: usize = total_bytes;
@@ -220,14 +232,62 @@ fn read_32x4(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
         asm volatile (
             \\.balign 64
             \\1:
-            \\ ldp q0, q1, [%[buffer]]
-            \\ ldp q0, q1, [%[buffer], #32]
-            \\ ldp q0, q1, [%[buffer], #64]
-            \\ ldp q0, q1, [%[buffer], #96]
+            \\ ld4 {v0.2d, v1.2d, v2.2d, v3.2d}, [%[buffer]]
+            \\ ld4 {v4.2d, v5.2d, v6.2d, v7.2d}, [%[buffer]]
             \\ subs %[count], %[count], #128
             \\ b.hi 1b
             : [count] "+r" (count),
             : [buffer] "r" (ctx.buffer.ptr),
-            : .{ .v0 = true, .v1 = true, .memory = true, .nzcv = true });
+            : .{
+              .v0 = true,
+              .v1 = true,
+              .v2 = true,
+              .v3 = true,
+              .v4 = true,
+              .v5 = true,
+              .v6 = true,
+              .v7 = true,
+              .memory = true,
+              .nzcv = true,
+            });
+    }
+}
+
+// Read_ld4x3: three `ld4` 4-register de-interleaving loads per iteration.
+// 3 * 64 = 192 bytes / iter.
+fn read_ld4x3(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+    if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{ .bytes = total_bytes, .label = "read_ld4x3" });
+        defer ctx.zone.deinit(profiler);
+
+        var count: usize = total_bytes;
+
+        asm volatile (
+            \\.balign 64
+            \\1:
+            \\ ld4 {v0.2d,  v1.2d,  v2.2d,  v3.2d},  [%[buffer]]
+            \\ ld4 {v4.2d,  v5.2d,  v6.2d,  v7.2d},  [%[buffer]]
+            \\ ld4 {v8.2d,  v9.2d,  v10.2d, v11.2d}, [%[buffer]]
+            \\ subs %[count], %[count], #192
+            \\ b.hi 1b
+            : [count] "+r" (count),
+            : [buffer] "r" (ctx.buffer.ptr),
+            : .{
+              .v0 = true,
+              .v1 = true,
+              .v2 = true,
+              .v3 = true,
+              .v4 = true,
+              .v5 = true,
+              .v6 = true,
+              .v7 = true,
+              .v8 = true,
+              .v9 = true,
+              .v10 = true,
+              .v11 = true,
+              .memory = true,
+              .nzcv = true,
+            });
     }
 }
