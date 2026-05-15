@@ -49,16 +49,16 @@ test "Bench Reader Cache" {
         read512KiB,
         read1Mib,
         read2Mib,
-        read16Mib,
-        read1Gib,
-        read128KiB_ld1,
-        read256KiB_ld1,
-        read512KiB_ld1,
-        read1Mib_ld1,
-        read2Mib_ld1,
-        read16Mib_ld1,
-        read1Gib_ld1,
-        read1Gibxld1,
+        // read16Mib,
+        // read1Gib,
+        // read128KiB_ld1,
+        // read256KiB_ld1,
+        // read512KiB_ld1,
+        // read1Mib_ld1,
+        // read2Mib_ld1,
+        // read16Mib_ld1,
+        // read1Gib_ld1,
+        // read1Gibxld1,
     });
 }
 
@@ -257,9 +257,6 @@ fn read1Gibxld1(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     }
 }
 
-//NOTE:
-//if you know that you are going to always git main memory,
-//using more ld1 doesn't help
 pub fn readBufferxLd1(buffer: []u8, mask: u64) void {
     var count: usize = buffer.len;
     asm volatile (
