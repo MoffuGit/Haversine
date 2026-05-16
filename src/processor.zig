@@ -12,20 +12,32 @@ const Processor = @This();
 io: std.Io,
 file: std.Io.File,
 reader: std.Io.File.Reader,
-buffer: [1024 * 1024 * 8]u8,
+buffer: []u8,
 parser: Parser,
 file_size: u64,
 
 pub fn init(self: *Processor, io: std.Io, gpa: mem.Allocator, path: [:0]const u8) !void {
     var z_file: Profiler.Zone = .empty;
-    z_file.init(@src(), GlobalProfiler, .{ .label = "prepareFile" });
+    z_file.init(@src(), GlobalProfiler, .{ .label = "prepareProcessor" });
     defer z_file.deinit(GlobalProfiler);
 
-    self.io = io;
-    self.file = try std.Io.Dir.cwd().openFile(io, path, .{});
-    self.file_size = (try self.file.stat(io)).size;
-    self.reader = self.file.reader(io, &self.buffer);
+    const file = try std.Io.Dir.cwd().openFile(io, path, .{});
+    errdefer file.close(io);
 
+    const stat = try file.stat(io);
+
+    const buffer = try gpa.alloc(u8, 1024 * 1024 * 8);
+    errdefer gpa.free(buffer);
+
+    self.* = .{
+        .file = file,
+        .io = io,
+        .file_size = stat.size,
+        .buffer = buffer,
+        .reader = undefined,
+        .parser = undefined,
+    };
+    self.reader = self.file.reader(io, self.buffer);
     self.parser.init(&self.reader.interface, gpa);
 }
 
