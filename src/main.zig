@@ -52,22 +52,19 @@ pub fn parse_args(args: std.process.Args, alloc: mem.Allocator) Error!Args {
 
     const path_arg = iter.next() orelse return Error.MissingArgs;
 
-    var split = std.mem.splitScalar(u8, path_arg, '/');
-    _ = split.next();
-    _ = split.next();
+    const basename = std.fs.path.basename(path_arg);
+    const stem = std.fs.path.stem(basename);
 
-    const name = split.next() orelse return Error.MissingArgs;
-    var _split = std.mem.splitScalar(u8, name, '_');
+    var parts = std.mem.splitScalar(u8, stem, '_');
 
-    const seed_arg = _split.next() orelse return Error.MissingArgs;
+    const seed_arg = parts.next() orelse return Error.MissingArgs;
     const seed = try std.fmt.parseInt(u64, seed_arg, 10);
 
-    const size_arg = _split.next() orelse return Error.MissingArgs;
+    const size_arg = parts.next() orelse return Error.MissingArgs;
     const size = try std.fmt.parseInt(u64, size_arg, 10);
 
-    const res_arg = _split.next() orelse return Error.MissingArgs;
-    const res_trim = std.mem.trimEnd(u8, res_arg, ".json");
-    const res = try std.fmt.parseFloat(f64, res_trim);
+    const res_arg = parts.next() orelse return Error.MissingArgs;
+    const res = try std.fmt.parseFloat(f64, res_arg);
 
     return .{
         .path = path_arg,
