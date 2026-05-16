@@ -1,5 +1,4 @@
 const std = @import("std");
-const mem = std.mem;
 const Profiler = @import("profiler.zig");
 const Processor = @import("processor.zig");
 const reference = @import("reference.zig");
@@ -15,25 +14,28 @@ pub fn main(init: std.process.Init) !void {
         GlobalProfiler.log();
     }
 
-    const args = try parse_args(init.minimal.args, gpa);
+    var iter = try init.minimal.args.iterateAllocator(gpa);
+    _ = iter.next();
+    const path = iter.next() orelse return Error.MissingArgs;
+
+    const info = try parse_path(path);
 
     var processor: Processor = undefined;
-    try processor.init(init.io, gpa, args.path);
+    try processor.init(init.io, gpa, path);
     defer processor.deinit();
 
     const count = processor.process(reference.referenceHaversine);
-    const res = count / @as(f64, @floatFromInt(args.size));
+    const res = count / @as(f64, @floatFromInt(info.size));
 
-    if (args.res != res) {
-        std.log.err("expected: {}, got: {}", .{ args.res, res });
+    if (info.res != res) {
+        std.log.err("expected: {}, got: {}", .{ info.res, res });
     }
 }
 
-pub const Args = struct {
+pub const PathInfo = struct {
     seed: u64,
     size: u64,
     res: f64,
-    path: [:0]const u8,
 };
 
 const Error =
@@ -43,17 +45,12 @@ const Error =
         MissingArgs,
     };
 
-pub fn parse_args(args: std.process.Args, alloc: mem.Allocator) Error!Args {
+pub fn parse_path(path: [:0]const u8) Error!PathInfo {
     var zone: Profiler.Zone = .empty;
-    zone.init(@src(), GlobalProfiler, .{ .label = "processArgs" });
+    zone.init(@src(), GlobalProfiler, .{ .label = "parsePath" });
     defer zone.deinit(GlobalProfiler);
 
-    var iter = try args.iterateAllocator(alloc);
-    _ = iter.next();
-
-    const path_arg = iter.next() orelse return Error.MissingArgs;
-
-    const basename = std.fs.path.basename(path_arg);
+    const basename = std.fs.path.basename(path);
     const stem = std.fs.path.stem(basename);
 
     var parts = std.mem.splitScalar(u8, stem, '_');
@@ -68,7 +65,6 @@ pub fn parse_args(args: std.process.Args, alloc: mem.Allocator) Error!Args {
     const res = try std.fmt.parseFloat(f64, res_arg);
 
     return .{
-        .path = path_arg,
         .size = size,
         .seed = seed,
         .res = res,
