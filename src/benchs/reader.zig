@@ -38,83 +38,98 @@ test "Bench Reads" {
         .stop_after_no_new_min_ms = 10000,
         .max_runs = 20,
         .log_profiler = true,
-    }, Context, &ctx, .{ writeBuffer, moveAllBytes, noopAllBytes, cmpAllBytes, decAllBytes });
+    }, Context, &ctx, .{
+        readBuffer64k,
+        readBuffer1mb,
+        readBuffer8mb,
+        allocBuffer,
+    });
 }
 
-fn writeBuffer(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+// fn writeBuffer(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+//     if (_ctx) |ctx| {
+//         ctx.zone = .empty;
+//         ctx.zone.init(@src(), profiler, .{
+//             .bytes = ctx.file_size,
+//             .label = "writeIntoBuffer",
+//             .flags = .{ .page_faults = true },
+//         });
+//         defer ctx.zone.deinit(profiler);
+//
+//         const data = try ctx.alloc.alloc(u8, ctx.file_size);
+//         defer ctx.alloc.free(data);
+//
+//         for (0..data.len) |idx| {
+//             data[idx] = @truncate(idx);
+//         }
+//     }
+// }
+//
+// fn moveAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+//     if (_ctx) |ctx| {
+//         ctx.zone = .empty;
+//         ctx.zone.init(@src(), profiler, .{
+//             .bytes = ctx.file_size,
+//             .label = "moveAllBytes",
+//             .flags = .{ .page_faults = true },
+//         });
+//         defer ctx.zone.deinit(profiler);
+//
+//         const data = try ctx.alloc.alloc(u8, ctx.file_size);
+//         defer ctx.alloc.free(data);
+//
+//         moveAllBytesAsm(ctx.file_size, @ptrCast(data));
+//     }
+// }
+//
+// fn noopAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+//     if (_ctx) |ctx| {
+//         ctx.zone = .empty;
+//         ctx.zone.init(@src(), profiler, .{
+//             .label = "noopAllBytes",
+//             .bytes = ctx.file_size,
+//         });
+//         defer ctx.zone.deinit(profiler);
+//
+//         noopAllBytesAsm(ctx.file_size);
+//     }
+// }
+//
+// fn cmpAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+//     if (_ctx) |ctx| {
+//         ctx.zone = .empty;
+//         ctx.zone.init(@src(), profiler, .{
+//             .label = "cmpAllBytes",
+//             .bytes = ctx.file_size,
+//         });
+//         defer ctx.zone.deinit(profiler);
+//
+//         cmpAllBytesAsm(ctx.file_size);
+//     }
+// }
+//
+// fn decAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
+//     if (_ctx) |ctx| {
+//         ctx.zone = .empty;
+//         ctx.zone.init(@src(), profiler, .{
+//             .label = "decAllBytes",
+//             .bytes = ctx.file_size,
+//         });
+//         defer ctx.zone.deinit(profiler);
+//
+//         decAllBytesAsm(ctx.file_size);
+//     }
+// }
+
+fn readBuffer64k(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
         ctx.zone = .empty;
         ctx.zone.init(@src(), profiler, .{
+            .label = "readBuffer64k",
             .bytes = ctx.file_size,
-            .label = "writeIntoBuffer",
-            .flags = .{ .page_faults = true },
         });
         defer ctx.zone.deinit(profiler);
 
-        const data = try ctx.alloc.alloc(u8, ctx.file_size);
-        defer ctx.alloc.free(data);
-
-        for (0..data.len) |idx| {
-            data[idx] = @truncate(idx);
-        }
-    }
-}
-
-fn moveAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
-    if (_ctx) |ctx| {
-        ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{
-            .bytes = ctx.file_size,
-            .label = "moveAllBytes",
-            .flags = .{ .page_faults = true },
-        });
-        defer ctx.zone.deinit(profiler);
-
-        const data = try ctx.alloc.alloc(u8, ctx.file_size);
-        defer ctx.alloc.free(data);
-
-        moveAllBytesAsm(ctx.file_size, @ptrCast(data));
-    }
-}
-
-fn noopAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
-    if (_ctx) |ctx| {
-        ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{
-            .label = "noopAllBytes",
-        });
-        defer ctx.zone.deinit(profiler);
-
-        noopAllBytesAsm(ctx.file_size);
-    }
-}
-
-fn cmpAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
-    if (_ctx) |ctx| {
-        ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{
-            .label = "cmpAllBytes",
-        });
-        defer ctx.zone.deinit(profiler);
-
-        cmpAllBytesAsm(ctx.file_size);
-    }
-}
-
-fn decAllBytes(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
-    if (_ctx) |ctx| {
-        ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{
-            .label = "decAllBytes",
-        });
-        defer ctx.zone.deinit(profiler);
-
-        decAllBytesAsm(ctx.file_size);
-    }
-}
-
-fn readBuffer64k(_ctx: ?*Context, _: *Profiler.Profiler) !void {
-    if (_ctx) |ctx| {
         var buffer: [64 * KiB]u8 = undefined;
 
         var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
@@ -129,8 +144,14 @@ fn readBuffer64k(_ctx: ?*Context, _: *Profiler.Profiler) !void {
     }
 }
 
-fn readBuffer1mb(_ctx: ?*Context, _: *Profiler.Profiler) !void {
+fn readBuffer1mb(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{
+            .label = "readBuffer1mb",
+            .bytes = ctx.file_size,
+        });
+        defer ctx.zone.deinit(profiler);
         var buffer: [MiB]u8 = undefined;
 
         var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
@@ -145,8 +166,14 @@ fn readBuffer1mb(_ctx: ?*Context, _: *Profiler.Profiler) !void {
     }
 }
 
-fn readBuffer8mb(_ctx: ?*Context, _: *Profiler.Profiler) !void {
+fn readBuffer8mb(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{
+            .label = "readBuffer8mb",
+            .bytes = ctx.file_size,
+        });
+        defer ctx.zone.deinit(profiler);
         var buffer: [MiB * 8]u8 = undefined;
 
         var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
@@ -161,8 +188,14 @@ fn readBuffer8mb(_ctx: ?*Context, _: *Profiler.Profiler) !void {
     }
 }
 
-fn allocBuffer(_ctx: ?*Context, _: *Profiler.Profiler) !void {
+fn allocBuffer(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
+        ctx.zone = .empty;
+        ctx.zone.init(@src(), profiler, .{
+            .label = "allocBuffer",
+            .bytes = ctx.file_size,
+        });
+        defer ctx.zone.deinit(profiler);
         var buffer: [MiB]u8 = undefined;
 
         var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});

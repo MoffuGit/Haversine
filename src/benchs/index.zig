@@ -7,11 +7,11 @@ const write_ports = @import("write_ports.zig");
 const cache = @import("cache.zig");
 
 test {
-    _ = cache;
+    // _ = cache;
     // _ = read_ports;
     // _ = reader_simd;
     // _ = write_ports;
     // _ = branch;
     // _ = noop;
-    // _ = reader;
+    _ = reader;
 }
