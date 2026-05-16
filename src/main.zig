@@ -25,7 +25,7 @@ pub fn main(init: std.process.Init) !void {
     try processor.init(init.io, gpa, path, GlobalProfiler);
     defer processor.deinit();
 
-    const count = processor.process(reference.referenceHaversine);
+    const count = processor.process();
     const res = count / @as(f64, @floatFromInt(info.size));
 
     if (info.res != res) {

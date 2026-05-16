@@ -45,7 +45,7 @@ fn processReference(_ctx: ?*Context, profiler: *Profiler) !void {
     try processor.init(ctx.io, ctx.alloc, ctx.path, profiler);
     defer processor.deinit();
 
-    const count = processor.process(reference.referenceHaversine);
+    const count = processor.process();
     const res = count / @as(f64, @floatFromInt(info.size));
 
     if (info.res != res) return error.WrongResult;
