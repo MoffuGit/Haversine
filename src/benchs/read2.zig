@@ -46,13 +46,13 @@ test "Bench Reads 2" {
 fn allocAndTouch(_ctx: ?*Context, profiler: *Profiler) !void {
     if (_ctx) |ctx| {
         ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{ .label = "allocAndRead", .bytes = ctx.file_size, .flags = .{ .page_faults = true } });
+        ctx.zone.init(@src(), profiler, .{ .label = "allocAndTouch", .bytes = 2 * MiB, .flags = .{ .page_faults = true } });
         defer ctx.zone.deinit(profiler);
         const buffer = try ctx.alloc.alloc(u8, 2 * MiB);
         defer ctx.alloc.free(buffer);
 
         for (0..(buffer.len + 128 - 1) / 128) |idx| {
-            buffer[idx] = 1;
+            buffer[idx * 128] = 1;
         }
     }
 }
