@@ -3,7 +3,6 @@ const Allocator = std.mem.Allocator;
 const json = @import("json.zig");
 const ascii = std.ascii;
 const ArrayList = std.ArrayList;
-const GlobalProfiler = &@import("global.zig").GlobalProfiler;
 const Profiler = @import("profiler.zig");
 
 const Parser = @This();
@@ -11,13 +10,13 @@ const Parser = @This();
 lexer: Lexer,
 alloc: Allocator,
 
-pub fn init(self: *Parser, reader: *std.Io.Reader, alloc: Allocator) void {
+pub fn init(self: *Parser, reader: *std.Io.Reader, alloc: Allocator, profiler: *Profiler.Profiler) void {
     self.* = .{
         .lexer = undefined,
         .alloc = alloc,
     };
 
-    self.lexer.init(reader, alloc);
+    self.lexer.init(reader, alloc, profiler);
 }
 
 pub fn deinit(self: *Parser) void {
@@ -86,15 +85,17 @@ const Lexer = struct {
     alloc: Allocator,
     char: ?u8,
     zone: Profiler.Zone,
+    profiler: *Profiler.Profiler,
 
     list: ArrayList(u8) = .empty,
 
-    pub fn init(self: *Self, reader: *std.Io.Reader, alloc: Allocator) void {
+    pub fn init(self: *Self, reader: *std.Io.Reader, alloc: Allocator, profiler: *Profiler.Profiler) void {
         self.* = .{
             .char = null,
             .reader = reader,
             .alloc = alloc,
             .zone = .empty,
+            .profiler = profiler,
         };
 
         self.read_char();
@@ -147,8 +148,8 @@ const Lexer = struct {
 
     pub fn next_token(self: *Self) ?Token {
         self.zone = .empty;
-        self.zone.init(@src(), GlobalProfiler, .{ .label = "lexer" });
-        defer self.zone.deinit(GlobalProfiler);
+        self.zone.init(@src(), self.profiler, .{ .label = "lexer" });
+        defer self.zone.deinit(self.profiler);
 
         self.skip_whitespace();
 
@@ -186,10 +187,10 @@ const Error =
         WrongJsonFile,
     };
 
-pub fn parse_path(path: [:0]const u8) Error!PathInfo {
+pub fn parse_path(path: [:0]const u8, profiler: *Profiler.Profiler) Error!PathInfo {
     var zone: Profiler.Zone = .empty;
-    zone.init(@src(), GlobalProfiler, .{ .label = "parsePath" });
-    defer zone.deinit(GlobalProfiler);
+    zone.init(@src(), profiler, .{ .label = "parsePath" });
+    defer zone.deinit(profiler);
 
     const basename = std.fs.path.basename(path);
     const stem = std.fs.path.stem(basename);

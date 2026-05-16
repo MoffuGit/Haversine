@@ -19,10 +19,10 @@ pub fn main(init: std.process.Init) !void {
     _ = iter.next();
     const path = iter.next() orelse return Error.MissingArgs;
 
-    const info = try Parser.parse_path(path);
+    const info = try Parser.parse_path(path, GlobalProfiler);
 
     var processor: Processor = undefined;
-    try processor.init(init.io, gpa, path);
+    try processor.init(init.io, gpa, path, GlobalProfiler);
     defer processor.deinit();
 
     const count = processor.process(reference.referenceHaversine);
