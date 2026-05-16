@@ -124,10 +124,7 @@ test "Bench Reads" {
 fn readBuffer64k(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
         ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{
-            .label = "readBuffer64k",
-            .bytes = ctx.file_size,
-        });
+        ctx.zone.init(@src(), profiler, .{ .label = "readBuffer64k", .bytes = ctx.file_size, .flags = .{ .page_faults = true } });
         defer ctx.zone.deinit(profiler);
 
         var buffer: [64 * KiB]u8 = undefined;
@@ -147,10 +144,7 @@ fn readBuffer64k(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
 fn readBuffer1mb(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
         ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{
-            .label = "readBuffer1mb",
-            .bytes = ctx.file_size,
-        });
+        ctx.zone.init(@src(), profiler, .{ .label = "readBuffer1mb", .bytes = ctx.file_size, .flags = .{ .page_faults = true } });
         defer ctx.zone.deinit(profiler);
         var buffer: [MiB]u8 = undefined;
 
@@ -169,10 +163,7 @@ fn readBuffer1mb(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
 fn readBuffer8mb(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
         ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{
-            .label = "readBuffer8mb",
-            .bytes = ctx.file_size,
-        });
+        ctx.zone.init(@src(), profiler, .{ .label = "readBuffer8mb", .bytes = ctx.file_size, .flags = .{ .page_faults = true } });
         defer ctx.zone.deinit(profiler);
         var buffer: [MiB * 8]u8 = undefined;
 
@@ -191,10 +182,7 @@ fn readBuffer8mb(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
 fn allocBuffer(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
         ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{
-            .label = "allocBuffer",
-            .bytes = ctx.file_size,
-        });
+        ctx.zone.init(@src(), profiler, .{ .label = "allocBuffer", .bytes = ctx.file_size, .flags = .{ .page_faults = true } });
         defer ctx.zone.deinit(profiler);
         var buffer: [MiB]u8 = undefined;
 
