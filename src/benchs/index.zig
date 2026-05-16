@@ -13,5 +13,5 @@ test {
     // _ = write_ports;
     // _ = branch;
     // _ = noop;
-    _ = reader;
+    // _ = reader;
 }
