@@ -35,13 +35,10 @@ test "Bench Reads" {
 
     try Tester.runAll(gpa, .{
         .min_runs = 3,
-        .stop_after_no_new_min_ms = 10000,
-        .max_runs = 20,
+        .stop_after_no_new_min_ms = 1000,
+        .max_runs = 200,
         .log_profiler = true,
     }, Context, &ctx, .{
-        readBuffer64k,
-        readBuffer1mb,
-        readBuffer8mb,
         allocBuffer,
     });
 }
@@ -121,87 +118,23 @@ test "Bench Reads" {
 //     }
 // }
 
-fn readBuffer64k(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
-    if (_ctx) |ctx| {
-        ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{ .label = "readBuffer64k", .bytes = ctx.file_size, .flags = .{ .page_faults = true } });
-        defer ctx.zone.deinit(profiler);
-
-        var buffer: [64 * KiB]u8 = undefined;
-
-        var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
-        defer file.close(ctx.io);
-
-        var reader = file.reader(ctx.io, &buffer);
-        const interface = &reader.interface;
-
-        while (true) {
-            _ = interface.takeByte() catch break;
-        }
-    }
-}
-
-fn readBuffer1mb(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
-    if (_ctx) |ctx| {
-        ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{ .label = "readBuffer1mb", .bytes = ctx.file_size, .flags = .{ .page_faults = true } });
-        defer ctx.zone.deinit(profiler);
-        var buffer: [MiB]u8 = undefined;
-
-        var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
-        defer file.close(ctx.io);
-
-        var reader = file.reader(ctx.io, &buffer);
-        const interface = &reader.interface;
-
-        while (true) {
-            _ = interface.takeByte() catch break;
-        }
-    }
-}
-
-fn readBuffer8mb(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
-    if (_ctx) |ctx| {
-        ctx.zone = .empty;
-        ctx.zone.init(@src(), profiler, .{ .label = "readBuffer8mb", .bytes = ctx.file_size, .flags = .{ .page_faults = true } });
-        defer ctx.zone.deinit(profiler);
-        var buffer: [MiB * 8]u8 = undefined;
-
-        var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
-        defer file.close(ctx.io);
-
-        var reader = file.reader(ctx.io, &buffer);
-        const interface = &reader.interface;
-
-        while (true) {
-            _ = interface.takeByte() catch break;
-        }
-    }
-}
-
 fn allocBuffer(_ctx: ?*Context, profiler: *Profiler.Profiler) !void {
     if (_ctx) |ctx| {
         ctx.zone = .empty;
         ctx.zone.init(@src(), profiler, .{ .label = "allocBuffer", .bytes = ctx.file_size, .flags = .{ .page_faults = true } });
         defer ctx.zone.deinit(profiler);
-        var buffer: [MiB]u8 = undefined;
+        const buffer = try ctx.alloc.alloc(u8, 2 * MiB);
+        defer ctx.alloc.free(buffer);
 
         var file = try std.Io.Dir.cwd().openFile(ctx.io, ctx.path, .{});
         defer file.close(ctx.io);
 
-        const data = try ctx.alloc.alloc(u8, ctx.file_size);
-        defer ctx.alloc.free(data);
-
-        var reader = file.reader(ctx.io, &buffer);
+        var reader = file.reader(ctx.io, buffer);
         const interface = &reader.interface;
 
-        var offset: usize = 0;
-        while (offset < data.len) {
-            const remaining = data.len - offset;
-            const chunk_len = @min(remaining, buffer.len);
-            const n = try interface.readSliceShort(data[offset..][0..chunk_len]);
-            if (n == 0) break;
-            offset += n;
+        while (true) {
+            interface.fill(buffer.len) catch break;
+            interface.tossBuffered();
         }
     }
 }
