@@ -1,11 +1,12 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 const mem = std.mem;
-const reference = @import("reference.zig");
 const Parser = @import("parser.zig");
 const Profiler = @import("profiler.zig");
 const json = @import("json.zig");
 const GlobalProfiler = &@import("global.zig").GlobalProfiler;
+
+pub const HaversineFn = *const fn (x0: f64, y0: f64, x1: f64, y1: f64, earth: f64) f64;
 
 const Processor = @This();
 
@@ -46,7 +47,7 @@ pub fn deinit(self: *Processor) void {
     self.file.close(self.io);
 }
 
-pub fn process(self: *Processor) f64 {
+pub fn process(self: *Processor, haversine_fn: HaversineFn) f64 {
     var count: f64 = 0.0;
 
     var parser_zone: Profiler.Zone = .empty;
@@ -65,7 +66,7 @@ pub fn process(self: *Processor) f64 {
         haversine_zone.init(@src(), GlobalProfiler, .{ .label = "haversineFn", .bytes = @sizeOf(json.Points) });
         defer haversine_zone.deinit(GlobalProfiler);
 
-        count += reference.referenceHaversine(p.x0, p.y0, p.x1, p.y1, 6372.8);
+        count += haversine_fn(p.x0, p.y0, p.x1, p.y1, 6372.8);
     }
 
     return count;

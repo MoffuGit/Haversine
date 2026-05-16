@@ -2,6 +2,7 @@ const std = @import("std");
 const mem = std.mem;
 const Profiler = @import("profiler.zig");
 const Processor = @import("processor.zig");
+const reference = @import("reference.zig");
 
 const GlobalProfiler = &@import("global.zig").GlobalProfiler;
 
@@ -20,7 +21,7 @@ pub fn main(init: std.process.Init) !void {
     try processor.init(init.io, gpa, args.path);
     defer processor.deinit();
 
-    const count = processor.process();
+    const count = processor.process(reference.referenceHaversine);
     const res = count / @as(f64, @floatFromInt(args.size));
 
     if (args.res != res) {
